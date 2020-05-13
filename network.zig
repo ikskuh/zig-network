@@ -202,6 +202,15 @@ pub const Socket = struct {
         };
     }
 
+    /// Connects the UDP or TCP socket to a remote server.
+    /// The `target` address type must fit the address type of the socket.
+    pub fn connect(self: Self, target: EndPoint) !void {
+        if (target.address != self.family)
+            return error.AddressFamilyMismach;
+        const sa = target.toSocketAddress();
+        try std.os.connect(self.internal, &sa, @sizeOf(@TypeOf(sa)));
+    }
+
     /// Makes this socket a TCP server and allows others to connect to
     /// this socket.
     /// Call `accept()` to handle incoming connections.

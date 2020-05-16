@@ -103,12 +103,12 @@ pub const EndPoint = struct {
         });
     }
 
-    fn fromSocketAddress(src: *align(4) const std.os.sockaddr, size: usize) !Self {
+    pub fn fromSocketAddress(src: *const std.os.sockaddr, size: usize) !Self {
         switch (src.family) {
             std.os.AF_INET => {
                 if (size < @sizeOf(std.os.sockaddr_in))
                     return error.InsufficientBytes;
-                const value = @ptrCast(*const std.os.sockaddr_in, src);
+                const value = @ptrCast(*const std.os.sockaddr_in, @alignCast(4, src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = Address{
@@ -119,7 +119,7 @@ pub const EndPoint = struct {
                 };
             },
             std.os.AF_INET6 => {
-                unreachable;
+                return error.UnsupportedAddressFamily;
             },
             else => {
                 std.debug.warn("got invalid socket address: {}\n", .{src});

@@ -5,6 +5,124 @@ comptime {
     // std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr_in6));
 }
 
+const is_windows = std.builtin.os.tag == .windows;
+
+const windows_data = struct {
+    usingnamespace std.os.windows;
+
+    extern "ws2_32" fn socket(af: c_int, type_0: c_int, protocol: c_int) callconv(.Stdcall) ws2_32.SOCKET;
+    extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.os.sockaddr, tolen: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn send(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.os.sockaddr, fromlen: [*c]c_int) callconv(.Stdcall) c_int;
+
+    fn windows_socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
+        const sock = socket(@intCast(c_int, addr_family), @intCast(c_int, socket_type), @intCast(c_int, protocol));
+        if (sock == ws2_32.INVALID_SOCKET) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
+                .WSAEMFILE => return error.ProcessFdQuotaExceeded,
+                .WSAENOBUFS => return error.SystemResources,
+                .WSAEPROTONOSUPPORT => return error.ProtocolNotSupported,
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+        return sock;
+    }
+
+    fn windows_connect(sock: ws2_32.SOCKET, sock_addr: *const std.os.sockaddr, len: std.os.socklen_t) std.os.ConnectError!void {
+        while (true) if (ws2_32.connect(sock, sock_addr, len) != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEACCES => error.PermissionDenied,
+                .WSAEADDRINUSE => error.AddressInUse,
+                .WSAEINPROGRESS => error.WouldBlock,
+                .WSAEALREADY => unreachable,
+                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
+                .WSAECONNREFUSED => error.ConnectionRefused,
+                .WSAEFAULT => unreachable,
+                .WSAEINTR => continue,
+                .WSAEISCONN => unreachable,
+                .WSAENETUNREACH => error.NetworkUnreachable,
+                .WSAEHOSTUNREACH => error.NetworkUnreachable,
+                .WSAENOTSOCK => unreachable,
+                .WSAETIMEDOUT => error.ConnectionTimedOut,
+                .WSAEWOULDBLOCK => error.WouldBlock,
+                else => |err| return unexpectedWSAError(err),
+            };
+        } else return;
+    }
+
+    fn windows_close(sock: ws2_32.SOCKET) void {
+        if (ws2_32.closesocket(sock) != 0) {
+            switch (ws2_32.WSAGetLastError()) {
+                .WSAENOTSOCK => unreachable,
+                .WSAEINPROGRESS => unreachable,
+                else => return,
+            }
+        }
+    }
+
+    fn windows_sendto(sock: ws2_32.SOCKET, buf: []const u8, flags: u32, dest_addr: ?*const std.os.sockaddr, addrlen: std.os.socklen_t) std.os.SendError!usize {
+        while (true) {
+            const result = sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, @intCast(c_int, addrlen));
+            if (result == ws2_32.SOCKET_ERROR) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEACCES => error.AccessDenied,
+                    .WSAECONNRESET => error.ConnectionResetByPeer,
+                    .WSAEDESTADDRREQ => unreachable,
+                    .WSAEFAULT => unreachable,
+                    .WSAEINTR => continue,
+                    .WSAEINVAL => unreachable,
+                    .WSAEMSGSIZE => error.MessageTooBig,
+                    .WSAENOBUFS => error.SystemResources,
+                    .WSAENOTCONN => unreachable,
+                    .WSAENOTSOCK => unreachable,
+                    .WSAEOPNOTSUPP => unreachable,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return @intCast(usize, result);
+        }
+    }
+
+    fn windows_send(sock: ws2_32.SOCKET, buf: []const u8, flags: u32) std.os.SendError!usize {
+        return windows_sendto(sock, buf, flags, null, 0);
+    }
+
+    fn windows_recvfrom(sock: ws2_32.SOCKET, buf: []u8, flags: u32, src_addr: ?*std.os.sockaddr, addrlen: ?*std.os.socklen_t) std.os.RecvFromError!usize {
+        while (true) {
+            var our_addrlen: c_int = undefined;
+            const result = recvfrom(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), src_addr, if (addrlen != null) &our_addrlen else null);
+            if (result == ws2_32.SOCKET_ERROR) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEFAULT => unreachable,
+                    .WSAEINVAL => unreachable,
+                    .WSAEISCONN => unreachable,
+                    .WSAENOTSOCK => unreachable,
+                    .WSAESHUTDOWN => unreachable,
+                    .WSAEOPNOTSUPP => unreachable,
+                    .WSAEWOULDBLOCK => error.WouldBlock,
+                    .WSAEINTR => continue,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            if (addrlen) |a| a.* = @intCast(u32, our_addrlen);
+            return @intCast(usize, result);
+        }
+    }
+};
+
+pub fn init() error{InitializationError}!void {
+    if (is_windows) {
+        _ = windows_data.WSAStartup(2, 2) catch return error.InitializationError;
+    }
+}
+
+pub fn deinit() void {
+    if (is_windows) {
+        windows_data.WSACleanup() catch return;
+    }
+}
+
 /// A network address abstraction. Contains one member for each possible type of address.
 pub const Address = union(AddressFamily) {
     ipv4: IPv4,
@@ -162,7 +280,7 @@ pub const Socket = struct {
     };
     const Self = @This();
 
-    const NativeSocket = if (std.builtin.os.tag == .windows) @compileError("windows not supported yet") else std.os.fd_t;
+    const NativeSocket = if (is_windows) std.os.windows.ws2_32.SOCKET else std.os.fd_t;
 
     family: AddressFamily,
     internal: NativeSocket,
@@ -170,15 +288,18 @@ pub const Socket = struct {
     /// Spawns a new socket that must be freed with `close()`.
     /// `family` defines the socket family, `protocol` the protocol used.
     pub fn create(family: AddressFamily, protocol: Protocol) !Self {
+        const socket_fn = if (is_windows) windows_data.windows_socket else std.os.socket;
+
         return Self{
             .family = family,
-            .internal = try std.os.socket(family.toNativeAddressFamily(), protocol.toSocketType(), 0),
+            .internal = try socket_fn(family.toNativeAddressFamily(), protocol.toSocketType(), 0),
         };
     }
 
     /// Closes the socket and releases its resources.
     pub fn close(self: Self) void {
-        std.os.close(self.internal);
+        const close_fn = if (is_windows) windows_data.windows_close else std.os.close;
+        close_fn(self.internal);
     }
 
     /// Binds the socket to the given end point.
@@ -207,8 +328,10 @@ pub const Socket = struct {
     pub fn connect(self: Self, target: EndPoint) !void {
         if (target.address != self.family)
             return error.AddressFamilyMismach;
+
+        const connect_fn = if (is_windows) windows_data.windows_connect else std.os.connect;
         const sa = target.toSocketAddress();
-        try std.os.connect(self.internal, &sa, @sizeOf(@TypeOf(sa)));
+        try connect_fn(self.internal, &sa, @sizeOf(@TypeOf(sa)));
     }
 
     /// Makes this socket a TCP server and allows others to connect to
@@ -237,14 +360,17 @@ pub const Socket = struct {
     /// will always send full packets, on TCP it will append
     /// to the stream.
     pub fn send(self: Self, data: []const u8) !usize {
-        return try std.os.send(self.internal, data, 0);
+        const send_fn = if (is_windows) windows_data.windows_send else std.os.send;
+        return try send_fn(self.internal, data, 0);
     }
 
     /// Blockingly receives some data from the connected peer.
     /// Will read all available data from the TCP stream or
     /// a UDP packet.
     pub fn receive(self: Self, data: []u8) !usize {
-        return try std.os.read(self.internal, data);
+        const recvfrom_fn = if (is_windows) windows_data.windows_recvfrom else std.os.recvfrom;
+
+        return try recvfrom_fn(self.internal, data, 0, null, null);
     }
 
     const ReceiveFrom = struct { numberOfBytes: usize, sender: EndPoint };
@@ -252,10 +378,12 @@ pub const Socket = struct {
     /// Same as ´receive`, but will also return the end point from which the data
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
+        const recvfrom_fn = if (is_windows) windows_data.windows_recvfrom else std.os.recvfrom;
+
         var addr: std.os.sockaddr align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr);
 
-        const len = try std.os.recvfrom(self.internal, data, 0, &addr, &size);
+        const len = try recvfrom_fn(self.internal, data, 0, &addr, &size);
 
         return ReceiveFrom{
             .numberOfBytes = len,
@@ -266,8 +394,10 @@ pub const Socket = struct {
     /// Sends a packet to a given network end point. Behaves the same as `send()`, but will only work for
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
+        const sendto_fn = if (is_windows) windows_data.windows_sendto else std.os.sendto;
+
         const sa = receiver.toSocketAddress();
-        return try std.os.sendto(self.internal, data, 0, &sa, @sizeOf(std.os.sockaddr));
+        return try sendto_fn(self.internal, data, 0, &sa, @sizeOf(std.os.sockaddr));
     }
 
     /// Sets the socket option `SO_REUSEPORT` which allows
@@ -325,7 +455,7 @@ pub const Socket = struct {
     }
 
     /// Gets an input stream that allows reading data from the socket.
-    pub fn inStream(self: Self) std.io.InStream(Socket, Error, receive) {
+    pub fn inStream(self: Self) std.io.InStream(Socket, std.os.RecvFromError, receive) {
         return .{
             .context = self,
         };

@@ -11,9 +11,13 @@ const windows_data = struct {
     usingnamespace std.os.windows;
 
     extern "ws2_32" fn socket(af: c_int, type_0: c_int, protocol: c_int) callconv(.Stdcall) ws2_32.SOCKET;
-    extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.os.sockaddr, tolen: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.os.sockaddr, tolen: std.os.socklen_t) callconv(.Stdcall) c_int;
     extern "ws2_32" fn send(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int) callconv(.Stdcall) c_int;
-    extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.os.sockaddr, fromlen: [*c]c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.os.sockaddr, fromlen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn listen(s: ws2_32.SOCKET, backlog: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn accept(s: ws2_32.SOCKET, addr: [*c]std.os.sockaddr, addrlen: [*c]std.os.socklen_t) callconv(.Stdcall) ws2_32.SOCKET;
+    extern "ws2_32" fn setsockopt(s: ws2_32.SOCKET, level: c_int, optname: c_int, optval: [*c]const u8, optlen: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn getsockname(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
 
     fn windows_socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
         const sock = socket(@intCast(c_int, addr_family), @intCast(c_int, socket_type), @intCast(c_int, protocol));
@@ -61,9 +65,15 @@ const windows_data = struct {
         }
     }
 
-    fn windows_sendto(sock: ws2_32.SOCKET, buf: []const u8, flags: u32, dest_addr: ?*const std.os.sockaddr, addrlen: std.os.socklen_t) std.os.SendError!usize {
+    fn windows_sendto(
+        sock: ws2_32.SOCKET,
+        buf: []const u8,
+        flags: u32,
+        dest_addr: ?*const std.os.sockaddr,
+        addrlen: std.os.socklen_t,
+    ) std.os.SendError!usize {
         while (true) {
-            const result = sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, @intCast(c_int, addrlen));
+            const result = sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
                 return switch (ws2_32.WSAGetLastError()) {
                     .WSAEACCES => error.AccessDenied,
@@ -88,10 +98,15 @@ const windows_data = struct {
         return windows_sendto(sock, buf, flags, null, 0);
     }
 
-    fn windows_recvfrom(sock: ws2_32.SOCKET, buf: []u8, flags: u32, src_addr: ?*std.os.sockaddr, addrlen: ?*std.os.socklen_t) std.os.RecvFromError!usize {
+    fn windows_recvfrom(
+        sock: ws2_32.SOCKET,
+        buf: []u8,
+        flags: u32,
+        src_addr: ?*std.os.sockaddr,
+        addrlen: ?*std.os.socklen_t,
+    ) std.os.RecvFromError!usize {
         while (true) {
-            var our_addrlen: c_int = undefined;
-            const result = recvfrom(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), src_addr, if (addrlen != null) &our_addrlen else null);
+            const result = recvfrom(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), src_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
                 return switch (ws2_32.WSAGetLastError()) {
                     .WSAEFAULT => unreachable,
@@ -105,10 +120,75 @@ const windows_data = struct {
                     else => |err| return unexpectedWSAError(err),
                 };
             }
-            if (addrlen) |a| a.* = @intCast(u32, our_addrlen);
             return @intCast(usize, result);
         }
     }
+
+    fn windows_listen(sock: w2_32.SOCKET, backlog: u32) std.os.ListenError!void {
+        const rc = listen(sock, @intCast(c_int, backlog));
+        if (rc != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEADDRINUSE => error.AddressInUse,
+                .WSAENOTSOCK => error.FileDescriptorNotASocket,
+                .WSAEOPNOTSUPP => error.OperationNotSupported,
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+    }
+
+    /// Ignores flags
+    fn windows_accept4(
+        sock: ws2_32.SOCKET,
+        addr: ?*std.os.sockaddr,
+        addr_size: *std.os.socklen_t,
+        flags: u32,
+    ) std.os.AcceptError!ws2_32.SOCKET {
+        while (true) {
+            const result = accept(sock, addr, addr_size);
+            if (result == ws2_32.INVALID_SOCKET) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEINTR => continue,
+                    .WSAEWOULDBLOCK => error.WouldBlock,
+                    .WSAECONNRESET => error.ConnectionAborted,
+                    .WSAEFAULT => unreachable,
+                    .WSAEINVAL => unreachable,
+                    .WSAENOTSOCK => unreachable,
+                    .WSAEMFILE => error.ProcessFdQuotaExceeded,
+                    .WSAENOBUFS => error.SystemResources,
+                    .WSAEOPNOTSUPP => unreachable,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return result;
+        }
+    }
+
+    fn windows_setsockopt(sock: ws2_32.SOCKET, level: u32, optname: u32, opt: []const u8) std.os.SetSockOptError!void {
+        if (setsockopt(sock, @intCast(c_int, level), @intCast(c_int, optname), opt.ptr, @intCast(c_int, opt.len)) != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAENOTSOCK => unreachable,
+                .WSAEINVAL => unreachable,
+                .WSAEFAULT => unreachable,
+                .WSAENOPROTOOPT => error.InvalidProtocolOption,
+
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+    }
+
+    fn windows_getsockname(sock: ws2_32.SOCKET, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) std.os.GetSockNameError!void {
+        if (getsockname(sock, addr, addrlen) != 0) {
+            return unexpectedWSAError(ws2_32.WSAGetLastError());
+        }
+    }
+
+    fn windows_getpeername(sock: ws2_32.SOCKET, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) GetPeerNameError!void {
+        windows_getsockname(sock, addr, addrlen) catch |err| switch (err) {
+            error.Unexpected => return err,
+            else => unreachable,
+        };
+    }
+
 };
 
 pub fn init() error{InitializationError}!void {
@@ -280,7 +360,7 @@ pub const Socket = struct {
     };
     const Self = @This();
 
-    const NativeSocket = if (is_windows) std.os.windows.ws2_32.SOCKET else std.os.fd_t;
+    const NativeSocket = if (is_windows) windows_data.ws2_32.SOCKET else std.os.fd_t;
 
     family: AddressFamily,
     internal: NativeSocket,
@@ -338,17 +418,21 @@ pub const Socket = struct {
     /// this socket.
     /// Call `accept()` to handle incoming connections.
     pub fn listen(self: Self) !void {
-        try std.os.listen(self.internal, 0);
+        const listen_fn = if (is_windows) windows_data.windows_listen else std.os.listen;
+        try listen_fn(self.internal, 0);
     }
 
     /// Waits until a new TCP client connects to this socket and accepts the incoming TCP connection.
     /// This function is only allowed for a bound TCP socket. `listen()` must have been called before!
     pub fn accept(self: Self) !Socket {
+        const accept4_fn = if (is_windows) windows_data.windows_accept4 else std.os.accept4;
+        const close_fn = if (is_windows) windows_data.windows_close else std.os.close;
+
         var addr: std.os.sockaddr = undefined;
         var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr);
 
-        const fd = try std.os.accept4(self.internal, &addr, &addr_size, 0);
-        errdefer std.os.close(fd);
+        const fd = try accept4_fn(self.internal, &addr, &addr_size, 0);
+        errdefer close_fn(fd);
 
         return Socket{
             .family = try AddressFamily.fromNativeAddressFamily(addr.family),
@@ -404,26 +488,32 @@ pub const Socket = struct {
     /// multiple bindings of the same socket to the same address
     /// on UDP sockets and allows quicker re-binding of TCP sockets.
     pub fn enablePortReuse(self: Self, enabled: bool) !void {
+        const setsockopt_fn = if (is_windows) windows_data.windows_setsockopt else std.os.setsockopt;
+
         var opt: c_int = if (enabled) 1 else 0;
-        try std.os.setsockopt(self.internal, std.os.SOL_SOCKET, std.os.SO_REUSEADDR, std.mem.asBytes(&opt));
+        try setsockopt_fn(self.internal, std.os.SOL_SOCKET, std.os.SO_REUSEADDR, std.mem.asBytes(&opt));
     }
 
     /// Retrieves the end point to which the socket is bound.
     pub fn getLocalEndPoint(self: Self) !EndPoint {
+        const getsockname_fn = if (is_windows) windows_data.windows_getsockname else std.os.getsockname;
+
         var addr: std.os.sockaddr align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(@TypeOf(addr));
 
-        try std.os.getsockname(self.internal, &addr, &size);
+        try getsockname_fn(self.internal, &addr, &size);
 
         return try EndPoint.fromSocketAddress(&addr, size);
     }
 
     /// Retrieves the end point to which the socket is connected.
     pub fn getRemoteEndPoint(self: Self) !EndPoint {
+        const getpeername_fn = if (is_windows) windows_data.windows_getpeername else getpeername;
+
         var addr: std.os.sockaddr align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(@TypeOf(addr));
 
-        try getpeername(self.internal, &addr, &size);
+        try getpeername_fn(self.internal, &addr, &size);
 
         return try EndPoint.fromSocketAddress(&addr, size);
     }
@@ -437,6 +527,8 @@ pub const Socket = struct {
     /// Multicast enables sending packets to the group and all joined peers
     /// will receive the sent data.
     pub fn joinMulticastGroup(self: Self, group: MulticastGroup) !void {
+        const setsockopt_fn = if (is_windows) windows_data.windows_setsockopt else std.os.setsockopt;
+
         const ip_mreq = extern struct {
             imr_multiaddr: u32,
             imr_address: u32,
@@ -449,9 +541,9 @@ pub const Socket = struct {
             .imr_ifindex = 0, // this cannot be crossplatform, so we set it to zero
         };
 
-        const IP_ADD_MEMBERSHIP = 35;
+        const IP_ADD_MEMBERSHIP = if (is_windows) 5 else 35;
 
-        try std.os.setsockopt(self.internal, std.os.SOL_SOCKET, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
+        try setsockopt_fn(self.internal, std.os.SOL_SOCKET, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
     }
 
     /// Gets an input stream that allows reading data from the socket.

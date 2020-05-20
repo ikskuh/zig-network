@@ -7,190 +7,6 @@ comptime {
 
 const is_windows = std.builtin.os.tag == .windows;
 
-const windows_data = struct {
-    usingnamespace std.os.windows;
-
-    extern "ws2_32" fn socket(af: c_int, type_0: c_int, protocol: c_int) callconv(.Stdcall) ws2_32.SOCKET;
-    extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.os.sockaddr, tolen: std.os.socklen_t) callconv(.Stdcall) c_int;
-    extern "ws2_32" fn send(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int) callconv(.Stdcall) c_int;
-    extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.os.sockaddr, fromlen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
-    extern "ws2_32" fn listen(s: ws2_32.SOCKET, backlog: c_int) callconv(.Stdcall) c_int;
-    extern "ws2_32" fn accept(s: ws2_32.SOCKET, addr: [*c]std.os.sockaddr, addrlen: [*c]std.os.socklen_t) callconv(.Stdcall) ws2_32.SOCKET;
-    extern "ws2_32" fn setsockopt(s: ws2_32.SOCKET, level: c_int, optname: c_int, optval: [*c]const u8, optlen: c_int) callconv(.Stdcall) c_int;
-    extern "ws2_32" fn getsockname(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
-
-    fn windows_socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
-        const sock = socket(@intCast(c_int, addr_family), @intCast(c_int, socket_type), @intCast(c_int, protocol));
-        if (sock == ws2_32.INVALID_SOCKET) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
-                .WSAEMFILE => return error.ProcessFdQuotaExceeded,
-                .WSAENOBUFS => return error.SystemResources,
-                .WSAEPROTONOSUPPORT => return error.ProtocolNotSupported,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-        return sock;
-    }
-
-    fn windows_connect(sock: ws2_32.SOCKET, sock_addr: *const std.os.sockaddr, len: std.os.socklen_t) std.os.ConnectError!void {
-        while (true) if (ws2_32.connect(sock, sock_addr, len) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEACCES => error.PermissionDenied,
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAEINPROGRESS => error.WouldBlock,
-                .WSAEALREADY => unreachable,
-                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
-                .WSAECONNREFUSED => error.ConnectionRefused,
-                .WSAEFAULT => unreachable,
-                .WSAEINTR => continue,
-                .WSAEISCONN => unreachable,
-                .WSAENETUNREACH => error.NetworkUnreachable,
-                .WSAEHOSTUNREACH => error.NetworkUnreachable,
-                .WSAENOTSOCK => unreachable,
-                .WSAETIMEDOUT => error.ConnectionTimedOut,
-                .WSAEWOULDBLOCK => error.WouldBlock,
-                else => |err| return unexpectedWSAError(err),
-            };
-        } else return;
-    }
-
-    fn windows_close(sock: ws2_32.SOCKET) void {
-        if (ws2_32.closesocket(sock) != 0) {
-            switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTSOCK => unreachable,
-                .WSAEINPROGRESS => unreachable,
-                else => return,
-            }
-        }
-    }
-
-    fn windows_sendto(
-        sock: ws2_32.SOCKET,
-        buf: []const u8,
-        flags: u32,
-        dest_addr: ?*const std.os.sockaddr,
-        addrlen: std.os.socklen_t,
-    ) std.os.SendError!usize {
-        while (true) {
-            const result = sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, addrlen);
-            if (result == ws2_32.SOCKET_ERROR) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEACCES => error.AccessDenied,
-                    .WSAECONNRESET => error.ConnectionResetByPeer,
-                    .WSAEDESTADDRREQ => unreachable,
-                    .WSAEFAULT => unreachable,
-                    .WSAEINTR => continue,
-                    .WSAEINVAL => unreachable,
-                    .WSAEMSGSIZE => error.MessageTooBig,
-                    .WSAENOBUFS => error.SystemResources,
-                    .WSAENOTCONN => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAEOPNOTSUPP => unreachable,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return @intCast(usize, result);
-        }
-    }
-
-    fn windows_send(sock: ws2_32.SOCKET, buf: []const u8, flags: u32) std.os.SendError!usize {
-        return windows_sendto(sock, buf, flags, null, 0);
-    }
-
-    fn windows_recvfrom(
-        sock: ws2_32.SOCKET,
-        buf: []u8,
-        flags: u32,
-        src_addr: ?*std.os.sockaddr,
-        addrlen: ?*std.os.socklen_t,
-    ) std.os.RecvFromError!usize {
-        while (true) {
-            const result = recvfrom(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), src_addr, addrlen);
-            if (result == ws2_32.SOCKET_ERROR) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEFAULT => unreachable,
-                    .WSAEINVAL => unreachable,
-                    .WSAEISCONN => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAESHUTDOWN => unreachable,
-                    .WSAEOPNOTSUPP => unreachable,
-                    .WSAEWOULDBLOCK => error.WouldBlock,
-                    .WSAEINTR => continue,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return @intCast(usize, result);
-        }
-    }
-
-    fn windows_listen(sock: w2_32.SOCKET, backlog: u32) std.os.ListenError!void {
-        const rc = listen(sock, @intCast(c_int, backlog));
-        if (rc != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAENOTSOCK => error.FileDescriptorNotASocket,
-                .WSAEOPNOTSUPP => error.OperationNotSupported,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    /// Ignores flags
-    fn windows_accept4(
-        sock: ws2_32.SOCKET,
-        addr: ?*std.os.sockaddr,
-        addr_size: *std.os.socklen_t,
-        flags: u32,
-    ) std.os.AcceptError!ws2_32.SOCKET {
-        while (true) {
-            const result = accept(sock, addr, addr_size);
-            if (result == ws2_32.INVALID_SOCKET) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEINTR => continue,
-                    .WSAEWOULDBLOCK => error.WouldBlock,
-                    .WSAECONNRESET => error.ConnectionAborted,
-                    .WSAEFAULT => unreachable,
-                    .WSAEINVAL => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAEMFILE => error.ProcessFdQuotaExceeded,
-                    .WSAENOBUFS => error.SystemResources,
-                    .WSAEOPNOTSUPP => unreachable,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return result;
-        }
-    }
-
-    fn windows_setsockopt(sock: ws2_32.SOCKET, level: u32, optname: u32, opt: []const u8) std.os.SetSockOptError!void {
-        if (setsockopt(sock, @intCast(c_int, level), @intCast(c_int, optname), opt.ptr, @intCast(c_int, opt.len)) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTSOCK => unreachable,
-                .WSAEINVAL => unreachable,
-                .WSAEFAULT => unreachable,
-                .WSAENOPROTOOPT => error.InvalidProtocolOption,
-
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    fn windows_getsockname(sock: ws2_32.SOCKET, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) std.os.GetSockNameError!void {
-        if (getsockname(sock, addr, addrlen) != 0) {
-            return unexpectedWSAError(ws2_32.WSAGetLastError());
-        }
-    }
-
-    fn windows_getpeername(sock: ws2_32.SOCKET, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) GetPeerNameError!void {
-        windows_getsockname(sock, addr, addrlen) catch |err| switch (err) {
-            error.Unexpected => return err,
-            else => unreachable,
-        };
-    }
-
-};
-
 pub fn init() error{InitializationError}!void {
     if (is_windows) {
         _ = windows_data.WSAStartup(2, 2) catch return error.InitializationError;
@@ -583,14 +399,14 @@ pub const SocketSet = struct {
     /// Initialize a new socket set. This can be reused for
     /// multiple queries without having to reset the set every time.
     /// Call `deinit()` to free the socket set.
-    pub fn init(allocator: *std.mem.Allocator) Self {
+    pub fn init(allocator: *std.mem.Allocator) !Self {
         return Self{
-            .internal = OSLogic.init(allocator),
+            .internal = try OSLogic.init(allocator),
         };
     }
 
     /// Frees the contained resources.
-    pub fn deinit(self: Self) void {
+    pub fn deinit(self: *Self) void {
         self.internal.deinit();
     }
 
@@ -632,10 +448,6 @@ pub const SocketSet = struct {
 /// Implementation of SocketSet for each platform,
 /// keeps the thing above nice and clean, all functions get inlined.
 const OSLogic = switch (std.builtin.os.tag) {
-
-    // Windows afaik provides fd_set to be used with ws2_32.
-    .windows => @compileError("Not supported yet."),
-
     // Linux uses `poll()` syscall to wait for socket events.
     // This allows an arbitrary number of sockets to be handled.
     .linux => struct {
@@ -688,7 +500,7 @@ const OSLogic = switch (std.builtin.os.tag) {
             } else null;
 
             if (index) |idx| {
-                self.fds.removeSwap(idx);
+                _ = self.fds.swapRemove(idx);
             }
         }
 
@@ -718,6 +530,194 @@ const OSLogic = switch (std.builtin.os.tag) {
             return self.checkMaskAnyBit(sock, std.os.POLLERR);
         }
     },
+    .windows => struct {
+        // The windows struct fd_set uses a statically size array of 64 sockets by default.
+        // However, it is documented that one can create bigger sets and pass them into the functions that use them.
+        // Instead, we dynamically allocate the sets and reallocate them as needed.
+        // See https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
+        const FdSet = packed struct {
+            capacity: c_uint,
+            size: c_uint,
+
+            fn fdSlice(self: *align(4) FdSet) []align(4) windows_data.ws2_32.SOCKET {
+                return @ptrCast([*]align(4) windows_data.ws2_32.SOCKET, @ptrCast([*]align(4) u8, self) + 2 * @sizeOf(c_uint))[0..self.size];
+            }
+
+            fn make(allocator: *std.mem.Allocator) !*align(4) FdSet {
+                // Initialize with enough space for 8 sockets.
+                var mem = try allocator.alignedAlloc(u8, 4, 2 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
+                @ptrCast(*c_uint, mem.ptr).* = 8;
+                @ptrCast(*c_uint, mem.ptr + @sizeOf(c_uint)).* = 0;
+                return @ptrCast(*FdSet, mem);
+            }
+
+            fn clear(self: *align(4) FdSet) void {
+                self.size = 0;
+            }
+
+            fn memSlice(self: *align(4) FdSet) []u8 {
+                return @ptrCast([*]u8, self)[0..(2 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows_data.ws2_32.SOCKET))];
+            }
+
+            fn deinit(self: *align(4) FdSet, allocator: *std.mem.Allocator) void {
+                allocator.free(self.memSlice());
+            }
+
+            fn containsFd(self: *align(4) FdSet, fd: windows_data.ws2_32.SOCKET) bool {
+                for (self.fdSlice()) |ex_fd| {
+                    if (ex_fd == fd) return true;
+                }
+                return false;
+            }
+
+            fn addFd(fd_set: **align(4) FdSet, allocator: *std.mem.Allocator, new_fd: windows_data.ws2_32.SOCKET) !void {
+                if (fd_set.*.size == fd_set.*.capacity) {
+                    // Double our capacity.
+                    fd_set.* = @ptrCast(*align(4) FdSet, (try allocator.alignedRealloc(fd_set.*.memSlice(), 4, fd_set.*.capacity * 2)).ptr);
+                    fd_set.*.capacity *= 2;
+                }
+
+                fd_set.*.size += 1;
+                fd_set.*.fdSlice()[fd_set.*.size - 1] = new_fd;
+            }
+
+            fn getSelectPointer(self: *align(4) FdSet) ?[*]u8 {
+                if (self.size == 0) return null;
+                return @ptrCast([*]u8, self) + @sizeOf(c_uint);
+            }
+        };
+
+        const Self = @This();
+
+        allocator: *std.mem.Allocator,
+
+        read_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
+        write_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
+
+        read_fd_set: *align(4) FdSet,
+        write_fd_set: *align(4) FdSet,
+        except_fd_set: *align(4) FdSet,
+
+        inline fn init(allocator: *std.mem.Allocator) !Self {
+            // TODO: https://github.com/ziglang/zig/issues/5391
+            var read_fds = std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET){};
+            var write_fds = std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET){};
+            try read_fds.ensureCapacity(allocator, 8);
+            try write_fds.ensureCapacity(allocator, 8);
+
+            return Self{
+                .allocator = allocator,
+                .read_fds = .{},
+                .write_fds = .{},
+                .read_fd_set = try FdSet.make(allocator),
+                .write_fd_set = try FdSet.make(allocator),
+                .except_fd_set = try FdSet.make(allocator),
+            };
+        }
+
+        inline fn deinit(self: *Self) void {
+            self.read_fds.deinit(self.allocator);
+            self.write_fds.deinit(self.allocator);
+
+            self.read_fd_set.deinit(self.allocator);
+            self.write_fd_set.deinit(self.allocator);
+            self.except_fd_set.deinit(self.allocator);
+        }
+
+        inline fn clear(self: *Self) void {
+            self.read_fds.shrink(0);
+            self.write_fds.shrink(0);
+
+            self.read_fd_set.clear();
+            self.write_fd_set.clear();
+            self.except_fd_set.clear();
+        }
+
+        inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
+            if (events.read) {
+                for (self.read_fds.items) |fd| {
+                    if (fd == sock.internal) return;
+                }
+                try self.read_fds.append(self.allocator, sock.internal);
+            }
+            if (events.write) {
+                for (self.write_fds.items) |fd| {
+                    if (fd == sock.internal) return;
+                }
+                try self.write_fds.append(self.allocator, sock.internal);
+            }
+        }
+
+        inline fn remove(self: *Self, sock: Socket) void {
+            for (self.read_fds.items) |fd, idx| {
+                if (fd == sock.internal) {
+                    _ = self.read_fds.swapRemove(idx);
+                    break;
+                }
+            }
+            for (self.write_fds.items) |fd, idx| {
+                if (fd == sock.internal) {
+                    _ = self.write_fds.swapRemove(idx);
+                    break;
+                }
+            }
+        }
+
+        pub const Set = enum {
+            read,
+            write,
+            except,
+        };
+
+        inline fn getFdSet(self: *Self, comptime set_selection: Set) !?[*]u8 {
+            const set_ptr = switch (set_selection) {
+                .read => &self.read_fd_set,
+                .write => &self.write_fd_set,
+                .except => &self.except_fd_set,
+            };
+
+            set_ptr.*.clear();
+            if (set_selection == .read or set_selection == .except) {
+                for (self.read_fds.items) |fd| {
+                    try FdSet.addFd(set_ptr, self.allocator, fd);
+                }
+            }
+
+            if (set_selection == .write) {
+                for (self.write_fds.items) |fd| {
+                    try FdSet.addFd(set_ptr, self.allocator, fd);
+                }
+            } else if (set_selection == .except) {
+                for (self.write_fds.items) |fd| {
+                    if (set_ptr.*.containsFd(fd)) continue;
+                    try FdSet.addFd(set_ptr, self.allocator, fd);
+                }
+            }
+
+            return set_ptr.*.getSelectPointer();
+        }
+
+        inline fn isReadyRead(self: Self, sock: Socket) bool {
+            if (self.read_fd_set.getSelectPointer()) |ptr| {
+                return windows_data.__WSAFDIsSet(sock.internal, ptr);
+            }
+            return false;
+        }
+
+        inline fn isReadyWrite(self: Self, sock: Socket) bool {
+            if (self.write_fd_set.getSelectPointer()) |ptr| {
+                return windows_data.__WSAFDIsSet(sock.internal, ptr);
+            }
+            return false;
+        }
+
+        inline fn isFaulted(self: Self, sock: Socket) bool {
+            if (self.except_fd_set.getSelectPointer()) |ptr| {
+                return windows_data.__WSAFDIsSet(sock.internal, ptr);
+            }
+            return false;
+        }
+    },
     else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
 };
 
@@ -730,6 +730,21 @@ const OSLogic = switch (std.builtin.os.tag) {
 /// actual timeout interval shall be rounded up to the next supported value.
 pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
     switch (std.builtin.os.tag) {
+        .windows => {
+            const read_set = try set.internal.getFdSet(.read);
+            const write_set = try set.internal.getFdSet(.write);
+            const except_set = try set.internal.getFdSet(.except);
+            if (read_set == null and write_set == null and except_set == null) return 0;
+
+            const tm: windows_data.timeval = if (timeout) |tout| block: {
+                const secs = @divFloor(tout, std.time.ns_per_s);
+                const usecs = @divFloor(tout - secs * std.time.ns_per_s, 1000);
+                break :block .{ .tv_sec = 0, .tv_usec = 0 };
+            } else .{ .tv_sec = 0, .tv_usec = 0 };
+
+            // Windows ignores first argument.
+            return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
+        },
         .linux => return try std.os.poll(
             set.internal.fds.items,
             if (timeout) |val| @intCast(i32, (val + std.time.millisecond - 1) / std.time.millisecond) else -1,
@@ -757,3 +772,214 @@ fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.soc
         std.os.ENOTCONN => return error.NotConnected,
     }
 }
+
+const windows_data = struct {
+    usingnamespace std.os.windows;
+
+    const timeval = extern struct {
+        tv_sec: c_long,
+        tv_usec: c_long,
+    };
+
+    extern "ws2_32" fn socket(af: c_int, type_0: c_int, protocol: c_int) callconv(.Stdcall) ws2_32.SOCKET;
+    extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.os.sockaddr, tolen: std.os.socklen_t) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn send(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.os.sockaddr, fromlen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn listen(s: ws2_32.SOCKET, backlog: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn accept(s: ws2_32.SOCKET, addr: [*c]std.os.sockaddr, addrlen: [*c]std.os.socklen_t) callconv(.Stdcall) ws2_32.SOCKET;
+    extern "ws2_32" fn setsockopt(s: ws2_32.SOCKET, level: c_int, optname: c_int, optval: [*c]const u8, optlen: c_int) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn getsockname(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn getpeername(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn select(nfds: c_int, readfds: ?*c_void, writefds: ?*c_void, exceptfds: ?*c_void, timeout: [*c]const timeval) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
+
+    fn windows_socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
+        const sock = socket(@intCast(c_int, addr_family), @intCast(c_int, socket_type), @intCast(c_int, protocol));
+        if (sock == ws2_32.INVALID_SOCKET) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
+                .WSAEMFILE => return error.ProcessFdQuotaExceeded,
+                .WSAENOBUFS => return error.SystemResources,
+                .WSAEPROTONOSUPPORT => return error.ProtocolNotSupported,
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+        return sock;
+    }
+
+    fn windows_connect(sock: ws2_32.SOCKET, sock_addr: *const std.os.sockaddr, len: std.os.socklen_t) std.os.ConnectError!void {
+        while (true) if (ws2_32.connect(sock, sock_addr, len) != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEACCES => error.PermissionDenied,
+                .WSAEADDRINUSE => error.AddressInUse,
+                .WSAEINPROGRESS => error.WouldBlock,
+                .WSAEALREADY => unreachable,
+                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
+                .WSAECONNREFUSED => error.ConnectionRefused,
+                .WSAEFAULT => unreachable,
+                .WSAEINTR => continue,
+                .WSAEISCONN => unreachable,
+                .WSAENETUNREACH => error.NetworkUnreachable,
+                .WSAEHOSTUNREACH => error.NetworkUnreachable,
+                .WSAENOTSOCK => unreachable,
+                .WSAETIMEDOUT => error.ConnectionTimedOut,
+                .WSAEWOULDBLOCK => error.WouldBlock,
+                else => |err| return unexpectedWSAError(err),
+            };
+        } else return;
+    }
+
+    fn windows_close(sock: ws2_32.SOCKET) void {
+        if (ws2_32.closesocket(sock) != 0) {
+            switch (ws2_32.WSAGetLastError()) {
+                .WSAENOTSOCK => unreachable,
+                .WSAEINPROGRESS => unreachable,
+                else => return,
+            }
+        }
+    }
+
+    fn windows_sendto(
+        sock: ws2_32.SOCKET,
+        buf: []const u8,
+        flags: u32,
+        dest_addr: ?*const std.os.sockaddr,
+        addrlen: std.os.socklen_t,
+    ) std.os.SendError!usize {
+        while (true) {
+            const result = sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, addrlen);
+            if (result == ws2_32.SOCKET_ERROR) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEACCES => error.AccessDenied,
+                    .WSAECONNRESET => error.ConnectionResetByPeer,
+                    .WSAEDESTADDRREQ => unreachable,
+                    .WSAEFAULT => unreachable,
+                    .WSAEINTR => continue,
+                    .WSAEINVAL => unreachable,
+                    .WSAEMSGSIZE => error.MessageTooBig,
+                    .WSAENOBUFS => error.SystemResources,
+                    .WSAENOTCONN => unreachable,
+                    .WSAENOTSOCK => unreachable,
+                    .WSAEOPNOTSUPP => unreachable,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return @intCast(usize, result);
+        }
+    }
+
+    fn windows_send(sock: ws2_32.SOCKET, buf: []const u8, flags: u32) std.os.SendError!usize {
+        return windows_sendto(sock, buf, flags, null, 0);
+    }
+
+    fn windows_recvfrom(
+        sock: ws2_32.SOCKET,
+        buf: []u8,
+        flags: u32,
+        src_addr: ?*std.os.sockaddr,
+        addrlen: ?*std.os.socklen_t,
+    ) std.os.RecvFromError!usize {
+        while (true) {
+            const result = recvfrom(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), src_addr, addrlen);
+            if (result == ws2_32.SOCKET_ERROR) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEFAULT => unreachable,
+                    .WSAEINVAL => unreachable,
+                    .WSAEISCONN => unreachable,
+                    .WSAENOTSOCK => unreachable,
+                    .WSAESHUTDOWN => unreachable,
+                    .WSAEOPNOTSUPP => unreachable,
+                    .WSAEWOULDBLOCK => error.WouldBlock,
+                    .WSAEINTR => continue,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return @intCast(usize, result);
+        }
+    }
+
+    fn windows_listen(sock: w2_32.SOCKET, backlog: u32) std.os.ListenError!void {
+        const rc = listen(sock, @intCast(c_int, backlog));
+        if (rc != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEADDRINUSE => error.AddressInUse,
+                .WSAENOTSOCK => error.FileDescriptorNotASocket,
+                .WSAEOPNOTSUPP => error.OperationNotSupported,
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+    }
+
+    /// Ignores flags
+    fn windows_accept4(
+        sock: ws2_32.SOCKET,
+        addr: ?*std.os.sockaddr,
+        addr_size: *std.os.socklen_t,
+        flags: u32,
+    ) std.os.AcceptError!ws2_32.SOCKET {
+        while (true) {
+            const result = accept(sock, addr, addr_size);
+            if (result == ws2_32.INVALID_SOCKET) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEINTR => continue,
+                    .WSAEWOULDBLOCK => error.WouldBlock,
+                    .WSAECONNRESET => error.ConnectionAborted,
+                    .WSAEFAULT => unreachable,
+                    .WSAEINVAL => unreachable,
+                    .WSAENOTSOCK => unreachable,
+                    .WSAEMFILE => error.ProcessFdQuotaExceeded,
+                    .WSAENOBUFS => error.SystemResources,
+                    .WSAEOPNOTSUPP => unreachable,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return result;
+        }
+    }
+
+    fn windows_setsockopt(sock: ws2_32.SOCKET, level: u32, optname: u32, opt: []const u8) std.os.SetSockOptError!void {
+        if (setsockopt(sock, @intCast(c_int, level), @intCast(c_int, optname), opt.ptr, @intCast(c_int, opt.len)) != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAENOTSOCK => unreachable,
+                .WSAEINVAL => unreachable,
+                .WSAEFAULT => unreachable,
+                .WSAENOPROTOOPT => error.InvalidProtocolOption,
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+    }
+
+    fn windows_getsockname(sock: ws2_32.SOCKET, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) std.os.GetSockNameError!void {
+        if (getsockname(sock, addr, addrlen) != 0) {
+            return unexpectedWSAError(ws2_32.WSAGetLastError());
+        }
+    }
+
+    fn windows_getpeername(sock: ws2_32.SOCKET, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) GetPeerNameError!void {
+        if (getpeername(sock, addr, addrlen) != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAENOTCONN => error.NotConnected,
+                else => |err| return unexpectedWSAError(err),
+            };
+        }
+    }
+
+    pub const SelectError = error{FileDescriptorNotASocket} || std.os.UnexpectedError;
+
+    fn windows_select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: *const timeval) SelectError!usize {
+        while (true) {
+            // Windows ignores nfds so we just pass zero here.
+            const result = select(0, read_fds, write_fds, except_fds, timeout);
+            if (result != 0) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEFAULT => unreachable,
+                    .WSAEINVAL => unreachable,
+                    .WSAEINTR => continue,
+                    .WSAENOTSOCK => error.FileDescriptorNotASocket,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return @intCast(usize, result);
+        }
+    }
+};

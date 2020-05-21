@@ -939,7 +939,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
 
         return result;
     }
-    @compileError("std.net.getAddresses unimplemented for this OS");
+    @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for getEndpointList!");
 }
 
 const GetAddrInfoError = error{

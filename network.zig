@@ -712,21 +712,21 @@ const WindowsOSLogic = struct {
 
     inline fn isReadyRead(self: Self, sock: Socket) bool {
         if (self.read_fd_set.getSelectPointer()) |ptr| {
-            return windows_data.__WSAFDIsSet(sock.internal, ptr);
+            return windows_data.__WSAFDIsSet(sock.internal, ptr) != 0;
         }
         return false;
     }
 
     inline fn isReadyWrite(self: Self, sock: Socket) bool {
         if (self.write_fd_set.getSelectPointer()) |ptr| {
-            return windows_data.__WSAFDIsSet(sock.internal, ptr);
+            return windows_data.__WSAFDIsSet(sock.internal, ptr) != 0;
         }
         return false;
     }
 
     inline fn isFaulted(self: Self, sock: Socket) bool {
         if (self.except_fd_set.getSelectPointer()) |ptr| {
-            return windows_data.__WSAFDIsSet(sock.internal, ptr);
+            return windows_data.__WSAFDIsSet(sock.internal, ptr) != 0;
         }
         return false;
     }

@@ -754,7 +754,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             } else .{ .tv_sec = 0, .tv_usec = 0 };
 
             // Windows ignores first argument.
-            return try windows_data.windows_select(0, read_set, write_set, except_set, if(timeout != null) &tm else null);
+            return try windows_data.windows_select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
         },
         .linux => return try std.os.poll(
             set.internal.fds.items,
@@ -782,6 +782,178 @@ fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.soc
         std.os.ENOBUFS => return error.SystemResources,
         std.os.ENOTCONN => return error.NotConnected,
     }
+}
+
+pub const EndpointList = struct {
+    arena: std.heap.ArenaAllocator,
+    endpoints: []EndPoint,
+    canon_name: ?[]u8,
+
+    pub fn deinit(self: *EndpointList) void {
+        var arena = self.arena;
+        arena.deinit();
+    }
+};
+
+// Code adapted from std.net
+
+/// Call `EndpointList.deinit` on the result.
+pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u16) !*EndpointList {
+    const result = blk: {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        errdefer arena.deinit();
+
+        const result = try arena.allocator.create(EndpointList);
+        result.* = EndpointList{
+            .arena = arena,
+            .endpoints = undefined,
+            .canon_name = null,
+        };
+        break :blk result;
+    };
+    const arena = &result.arena.allocator;
+    errdefer result.arena.deinit();
+
+    if (std.builtin.link_libc or is_windows) {
+        const getaddrinfo_fn = if (is_windows) windows_data.windows_getaddrinfo else libc_getaddrinfo;
+        const freeaddrinfo_fn = if(is_windows) windows_data.freeaddrinfo else std.os.system.freeaddrinfo;
+        const addrinfo = if (is_windows) windows_data.addrinfo else std.os.addrinfo;
+
+        const AI_NUMERICSERV = if (is_windows) 0x00000008  else std.c.AI_NUMERICSERV;
+
+        const name_c = try std.cstr.addNullByte(allocator, name);
+        defer allocator.free(name_c);
+
+        const port_c = try std.fmt.allocPrint(allocator, "{}\x00", .{port});
+        defer allocator.free(port_c);
+
+        const hints = addrinfo{
+            .flags = AI_NUMERICSERV,
+            // TODO: IPv6 support
+            .family = std.os.AF_INET,
+            .socktype = std.os.SOCK_STREAM,
+            .protocol = std.os.IPPROTO_TCP,
+            .canonname = null,
+            .addr = null,
+            .addrlen = 0,
+            .next = null,
+        };
+
+        var res: *addrinfo = undefined;
+        try getaddrinfo_fn(name_c.ptr, @ptrCast([*:0]const u8, port_c.ptr), &hints, &res);
+        defer freeaddrinfo_fn(res);
+
+        const addr_count = blk: {
+            var count: usize = 0;
+            var it: ?*addrinfo = res;
+            while (it) |info| : (it = info.next) {
+                // TODO: IPv6 support.
+                if (info.addr != null and info.addr.?.family != std.os.AF_INET6) {
+                    count += 1;
+                }
+            }
+            break :blk count;
+        };
+        result.endpoints = try arena.alloc(EndPoint, addr_count);
+
+        var it: ?*addrinfo = res;
+        var i: usize = 0;
+        while (it) |info| : (it = info.next) {
+            // TODO: IPv6 support.
+            const sockaddr = info.addr orelse continue;
+            const bytes = @ptrCast(*const [4]u8, sockaddr.data[2..]);
+
+            const addr: Address = switch (sockaddr.family) {
+                std.os.AF_INET => .{
+                    .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]),
+                },
+                std.os.AF_INET6 => continue,
+                else => unreachable,
+            };
+
+            result.endpoints[i] = .{
+                .address = addr,
+                .port = port,
+            };
+
+            if (info.canonname) |n| {
+                if (result.canon_name == null) {
+                    result.canon_name = try std.mem.dupe(arena, u8, std.mem.spanZ(n));
+                }
+            }
+            i += 1;
+        }
+
+        return result;
+    }
+
+    if (std.builtin.os.tag == .linux) {
+        // Fall back to std.net
+        const address_list = try std.net.getAddressList(allocator, name, port);
+        defer address_list.deinit();
+
+        if (address_list.canon_name) |cname| {
+            result.canon_name = try std.mem.dupe(arena, u8, cname);
+        }
+
+        // TODO: IPv6 support
+        var count: usize = 0;
+        for (address_list.addrs) |net_addr| {
+            if (net_addr.any.family != std.os.AF_INET) continue;
+            count += 1;
+        }
+
+        result.endpoints = try arena.alloc(EndPoint, count);
+
+        var idx: usize = 0;
+        for (address_list.addrs) |net_addr| {
+            if (net_addr.any.family != std.os.AF_INET) continue;
+            const bytes = @ptrCast(*const [4]u8, &net_addr.in.addr);
+            result.endpoints[idx] = EndPoint{
+                .address = .{ .ipv4 = .{ .value = bytes.* } },
+                .port = port,
+            };
+            idx += 1;
+        }
+
+        return result;
+    }
+    @compileError("std.net.getAddresses unimplemented for this OS");
+}
+
+const GetAddrInfoError = error {
+    HostLacksNetworkAddresses,
+    TemporaryNameServerFailure,
+    NameServerFailure,
+    AddressFamilyNotSupported,
+    OutOfMemory,
+    UnknownHostName,
+    ServiceUnavailable,
+} || std.os.UnexpectedError;
+
+fn libc_getaddrinfo(
+    name: [*:0]const u8,
+    port: [*:0]const u8,
+    hints: *const std.os.addrinfo,
+    result: **std.os.addrinfo,
+) GetAddrInfoError!void {
+    const rc = std.os.system.getaddrinfo(name, port, hints, result);
+    if (rc != @intToEnum(std.os.system.EAI, 0)) return switch (rc) {
+        .ADDRFAMILY => return error.HostLacksNetworkAddresses,
+        .AGAIN => return error.TemporaryNameServerFailure,
+        .BADFLAGS => unreachable, // Invalid hints
+        .FAIL => return error.NameServerFailure,
+        .FAMILY => return error.AddressFamilyNotSupported,
+        .MEMORY => return error.OutOfMemory,
+        .NODATA => return error.HostLacksNetworkAddresses,
+        .NONAME => return error.UnknownHostName,
+        .SERVICE => return error.ServiceUnavailable,
+        .SOCKTYPE => unreachable, // Invalid socket type requested in hints
+        .SYSTEM => switch (std.os.errno(-1)) {
+            else => |e| return std.os.unexpectedErrno(e),
+        },
+        else => unreachable,
+    };
 }
 
 const windows_data = struct {
@@ -1015,4 +1187,39 @@ const windows_data = struct {
             };
         }
     }
+
+    const addrinfo = extern struct {
+        flags: i32,
+        family: i32,
+        socktype: i32,
+        protocol: i32,
+        addrlen: std.os.socklen_t,
+        canonname: ?[*:0]u8,
+        addr: ?*std.os.sockaddr,
+        next: ?*addrinfo,
+    };
+
+    extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const addrinfo, result: **addrinfo) callconv(.Stdcall) c_int;
+    extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(.Stdcall) void;
+
+    fn windows_getaddrinfo(
+        name: [*:0]const u8,
+        port: [*:0]const u8,
+        hints: *const addrinfo,
+        result: **addrinfo,
+    ) GetAddrInfoError!void {
+        const rc = getaddrinfo(name, port, hints, result);
+        if (rc != 0) return switch(ws2_32.WSAGetLastError()) {
+            .WSATRY_AGAIN => error.TemporaryNameServerFailure,
+            .WSAEINVAL => unreachable,
+            .WSANO_RECOVERY => error.NameServerFailure,
+            .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
+            .WSA_NOT_ENOUGH_MEMORY => error.OutOfMemory,
+            .WSAHOST_NOT_FOUND => error.UnknownHostName,
+            .WSATYPE_NOT_FOUND => error.ServiceUnavailable,
+            .WSAESOCKTNOSUPPORT => unreachable,
+            else => |err| return unexpectedWSAError(err),
+        };
+    }
 };
+

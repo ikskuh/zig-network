@@ -784,6 +784,27 @@ fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.soc
     }
 }
 
+pub fn connectToHost(
+    allocator: *std.mem.Allocator,
+    name: []const u8,
+    port: u16,
+    protocol: Protocol,
+) !Socket {
+    const endpoint_list = try getEndpointList(allocator, name, port);
+    defer endpoint_list.deinit();
+
+    for (endpoint_list.endpoints) |endpt| {
+        const sock = try Socket.create(@as(AddressFamily, endpt.address), protocol);
+        sock.connect(endpt) catch {
+            sock.close();
+            continue;
+        };
+        return sock;
+    }
+
+    return error.CouldNotConnect;
+}
+
 pub const EndpointList = struct {
     arena: std.heap.ArenaAllocator,
     endpoints: []EndPoint,
@@ -816,10 +837,10 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
 
     if (std.builtin.link_libc or is_windows) {
         const getaddrinfo_fn = if (is_windows) windows_data.windows_getaddrinfo else libc_getaddrinfo;
-        const freeaddrinfo_fn = if(is_windows) windows_data.freeaddrinfo else std.os.system.freeaddrinfo;
+        const freeaddrinfo_fn = if (is_windows) windows_data.freeaddrinfo else std.os.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows_data.addrinfo else std.os.addrinfo;
 
-        const AI_NUMERICSERV = if (is_windows) 0x00000008  else std.c.AI_NUMERICSERV;
+        const AI_NUMERICSERV = if (is_windows) 0x00000008 else std.c.AI_NUMERICSERV;
 
         const name_c = try std.cstr.addNullByte(allocator, name);
         defer allocator.free(name_c);
@@ -921,7 +942,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
     @compileError("std.net.getAddresses unimplemented for this OS");
 }
 
-const GetAddrInfoError = error {
+const GetAddrInfoError = error{
     HostLacksNetworkAddresses,
     TemporaryNameServerFailure,
     NameServerFailure,
@@ -938,22 +959,23 @@ fn libc_getaddrinfo(
     result: **std.os.addrinfo,
 ) GetAddrInfoError!void {
     const rc = std.os.system.getaddrinfo(name, port, hints, result);
-    if (rc != @intToEnum(std.os.system.EAI, 0)) return switch (rc) {
-        .ADDRFAMILY => return error.HostLacksNetworkAddresses,
-        .AGAIN => return error.TemporaryNameServerFailure,
-        .BADFLAGS => unreachable, // Invalid hints
-        .FAIL => return error.NameServerFailure,
-        .FAMILY => return error.AddressFamilyNotSupported,
-        .MEMORY => return error.OutOfMemory,
-        .NODATA => return error.HostLacksNetworkAddresses,
-        .NONAME => return error.UnknownHostName,
-        .SERVICE => return error.ServiceUnavailable,
-        .SOCKTYPE => unreachable, // Invalid socket type requested in hints
-        .SYSTEM => switch (std.os.errno(-1)) {
-            else => |e| return std.os.unexpectedErrno(e),
-        },
-        else => unreachable,
-    };
+    if (rc != @intToEnum(std.os.system.EAI, 0))
+        return switch (rc) {
+            .ADDRFAMILY => return error.HostLacksNetworkAddresses,
+            .AGAIN => return error.TemporaryNameServerFailure,
+            .BADFLAGS => unreachable, // Invalid hints
+            .FAIL => return error.NameServerFailure,
+            .FAMILY => return error.AddressFamilyNotSupported,
+            .MEMORY => return error.OutOfMemory,
+            .NODATA => return error.HostLacksNetworkAddresses,
+            .NONAME => return error.UnknownHostName,
+            .SERVICE => return error.ServiceUnavailable,
+            .SOCKTYPE => unreachable, // Invalid socket type requested in hints
+            .SYSTEM => switch (std.os.errno(-1)) {
+                else => |e| return std.os.unexpectedErrno(e),
+            },
+            else => unreachable,
+        };
 }
 
 const windows_data = struct {
@@ -1209,17 +1231,17 @@ const windows_data = struct {
         result: **addrinfo,
     ) GetAddrInfoError!void {
         const rc = getaddrinfo(name, port, hints, result);
-        if (rc != 0) return switch(ws2_32.WSAGetLastError()) {
-            .WSATRY_AGAIN => error.TemporaryNameServerFailure,
-            .WSAEINVAL => unreachable,
-            .WSANO_RECOVERY => error.NameServerFailure,
-            .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
-            .WSA_NOT_ENOUGH_MEMORY => error.OutOfMemory,
-            .WSAHOST_NOT_FOUND => error.UnknownHostName,
-            .WSATYPE_NOT_FOUND => error.ServiceUnavailable,
-            .WSAESOCKTNOSUPPORT => unreachable,
-            else => |err| return unexpectedWSAError(err),
-        };
+        if (rc != 0)
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSATRY_AGAIN => error.TemporaryNameServerFailure,
+                .WSAEINVAL => unreachable,
+                .WSANO_RECOVERY => error.NameServerFailure,
+                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
+                .WSA_NOT_ENOUGH_MEMORY => error.OutOfMemory,
+                .WSAHOST_NOT_FOUND => error.UnknownHostName,
+                .WSATYPE_NOT_FOUND => error.ServiceUnavailable,
+                .WSAESOCKTNOSUPPORT => unreachable,
+                else => |err| return unexpectedWSAError(err),
+            };
     }
 };
-

@@ -200,8 +200,10 @@ pub const Socket = struct {
 
     /// Binds the socket to the given end point.
     pub fn bind(self: Self, ep: EndPoint) !void {
+        const bind_fn = if (is_windows) windows_data.windows_bind else std.os.bind;
+
         var sockaddr = ep.toSocketAddress();
-        try std.os.bind(self.internal, &sockaddr, @sizeOf(@TypeOf(sockaddr)));
+        try bind_fn(self.internal, &sockaddr, @sizeOf(@TypeOf(sockaddr)));
     }
 
     /// Binds the socket to all supported addresses on the local device.
@@ -535,45 +537,46 @@ const OSLogic = switch (std.builtin.os.tag) {
         // However, it is documented that one can create bigger sets and pass them into the functions that use them.
         // Instead, we dynamically allocate the sets and reallocate them as needed.
         // See https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
-        const FdSet = packed struct {
+        const FdSet = extern struct {
             capacity: c_uint,
             size: c_uint,
 
-            fn fdSlice(self: *align(4) FdSet) []align(4) windows_data.ws2_32.SOCKET {
-                return @ptrCast([*]align(4) windows_data.ws2_32.SOCKET, @ptrCast([*]align(4) u8, self) + 2 * @sizeOf(c_uint))[0..self.size];
+            fn fdSlice(self: *align(8) FdSet) []windows_data.ws2_32.SOCKET {
+                return @ptrCast([*]windows_data.ws2_32.SOCKET, @ptrCast([*]u8, self) + 2 * @sizeOf(c_uint))[0..self.size];
             }
 
-            fn make(allocator: *std.mem.Allocator) !*align(4) FdSet {
+            fn make(allocator: *std.mem.Allocator) !*align(8) FdSet {
                 // Initialize with enough space for 8 sockets.
-                var mem = try allocator.alignedAlloc(u8, 4, 2 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
+                var mem = try allocator.alignedAlloc(u8, 8, 2 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
                 @ptrCast(*c_uint, mem.ptr).* = 8;
                 @ptrCast(*c_uint, mem.ptr + @sizeOf(c_uint)).* = 0;
                 return @ptrCast(*FdSet, mem);
             }
 
-            fn clear(self: *align(4) FdSet) void {
+            fn clear(self: *align(8) FdSet) void {
                 self.size = 0;
             }
 
-            fn memSlice(self: *align(4) FdSet) []u8 {
+            fn memSlice(self: *align(8) FdSet) []u8 {
                 return @ptrCast([*]u8, self)[0..(2 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows_data.ws2_32.SOCKET))];
             }
 
-            fn deinit(self: *align(4) FdSet, allocator: *std.mem.Allocator) void {
+            fn deinit(self: *align(8) FdSet, allocator: *std.mem.Allocator) void {
                 allocator.free(self.memSlice());
             }
 
-            fn containsFd(self: *align(4) FdSet, fd: windows_data.ws2_32.SOCKET) bool {
+            fn containsFd(self: *align(8) FdSet, fd: windows_data.ws2_32.SOCKET) bool {
                 for (self.fdSlice()) |ex_fd| {
                     if (ex_fd == fd) return true;
                 }
                 return false;
             }
 
-            fn addFd(fd_set: **align(4) FdSet, allocator: *std.mem.Allocator, new_fd: windows_data.ws2_32.SOCKET) !void {
+            fn addFd(fd_set: **align(8) FdSet, allocator: *std.mem.Allocator, new_fd: windows_data.ws2_32.SOCKET) !void {
                 if (fd_set.*.size == fd_set.*.capacity) {
                     // Double our capacity.
-                    fd_set.* = @ptrCast(*align(4) FdSet, (try allocator.alignedRealloc(fd_set.*.memSlice(), 4, fd_set.*.capacity * 2)).ptr);
+                    const new_mem_size = 2 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows_data.ws2_32.SOCKET);
+                    fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.alignedRealloc(fd_set.*.memSlice(), 8, new_mem_size)).ptr);
                     fd_set.*.capacity *= 2;
                 }
 
@@ -581,7 +584,7 @@ const OSLogic = switch (std.builtin.os.tag) {
                 fd_set.*.fdSlice()[fd_set.*.size - 1] = new_fd;
             }
 
-            fn getSelectPointer(self: *align(4) FdSet) ?[*]u8 {
+            fn getSelectPointer(self: *align(8) FdSet) ?[*]u8 {
                 if (self.size == 0) return null;
                 return @ptrCast([*]u8, self) + @sizeOf(c_uint);
             }
@@ -594,9 +597,9 @@ const OSLogic = switch (std.builtin.os.tag) {
         read_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
         write_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
 
-        read_fd_set: *align(4) FdSet,
-        write_fd_set: *align(4) FdSet,
-        except_fd_set: *align(4) FdSet,
+        read_fd_set: *align(8) FdSet,
+        write_fd_set: *align(8) FdSet,
+        except_fd_set: *align(8) FdSet,
 
         inline fn init(allocator: *std.mem.Allocator) !Self {
             // TODO: https://github.com/ziglang/zig/issues/5391
@@ -663,7 +666,7 @@ const OSLogic = switch (std.builtin.os.tag) {
             }
         }
 
-        pub const Set = enum {
+        const Set = enum {
             read,
             write,
             except,
@@ -693,7 +696,6 @@ const OSLogic = switch (std.builtin.os.tag) {
                     try FdSet.addFd(set_ptr, self.allocator, fd);
                 }
             }
-
             return set_ptr.*.getSelectPointer();
         }
 
@@ -739,11 +741,12 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             const tm: windows_data.timeval = if (timeout) |tout| block: {
                 const secs = @divFloor(tout, std.time.ns_per_s);
                 const usecs = @divFloor(tout - secs * std.time.ns_per_s, 1000);
-                break :block .{ .tv_sec = 0, .tv_usec = 0 };
+                break :block .{ .tv_sec = @intCast(c_long, secs), .tv_usec = @intCast(c_long, usecs) };
             } else .{ .tv_sec = 0, .tv_usec = 0 };
 
             // Windows ignores first argument.
-            return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
+            // return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
+            return try windows_data.windows_select(0, null, write_set, null, &tm);
         },
         .linux => return try std.os.poll(
             set.internal.fds.items,
@@ -792,6 +795,7 @@ const windows_data = struct {
     extern "ws2_32" fn getpeername(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(.Stdcall) c_int;
     extern "ws2_32" fn select(nfds: c_int, readfds: ?*c_void, writefds: ?*c_void, exceptfds: ?*c_void, timeout: [*c]const timeval) callconv(.Stdcall) c_int;
     extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
+    extern "ws2_32" fn bind(s: ws2_32.SOCKET, addr: [*c]const std.os.sockaddr, namelen: std.os.socklen_t) callconv(.Stdcall) c_int;
 
     fn windows_socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
         const sock = socket(@intCast(c_int, addr_family), @intCast(c_int, socket_type), @intCast(c_int, protocol));
@@ -898,7 +902,14 @@ const windows_data = struct {
         }
     }
 
-    fn windows_listen(sock: w2_32.SOCKET, backlog: u32) std.os.ListenError!void {
+    // TODO: std.os.ListenError is not pub.
+    const ListenError = error{
+        AddressInUse,
+        FileDescriptorNotASocket,
+        OperationNotSupported,
+    } || std.os.UnexpectedError;
+
+    fn windows_listen(sock: ws2_32.SOCKET, backlog: u32) ListenError!void {
         const rc = listen(sock, @intCast(c_int, backlog));
         if (rc != 0) {
             return switch (ws2_32.WSAGetLastError()) {
@@ -966,11 +977,11 @@ const windows_data = struct {
 
     pub const SelectError = error{FileDescriptorNotASocket} || std.os.UnexpectedError;
 
-    fn windows_select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: *const timeval) SelectError!usize {
+    fn windows_select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: ?*const timeval) SelectError!usize {
         while (true) {
             // Windows ignores nfds so we just pass zero here.
             const result = select(0, read_fds, write_fds, except_fds, timeout);
-            if (result != 0) {
+            if (result == ws2_32.SOCKET_ERROR) {
                 return switch (ws2_32.WSAGetLastError()) {
                     .WSAEFAULT => unreachable,
                     .WSAEINVAL => unreachable,
@@ -980,6 +991,20 @@ const windows_data = struct {
                 };
             }
             return @intCast(usize, result);
+        }
+    }
+
+    fn windows_bind(sock: ws2_32.SOCKET, addr: *const std.os.sockaddr, namelen: std.os.socklen_t) std.os.BindError!void {
+        if (bind(sock, addr, namelen) != 0) {
+            return switch (ws2_32.WSAGetLastError()) {
+                .WSAEACCES => error.AccessDenied,
+                .WSAEADDRINUSE => error.AddressInUse,
+                .WSAEINVAL => unreachable,
+                .WSAENOTSOCK => unreachable,
+                .WSAEADDRNOTAVAIL => error.AddressNotAvailable,
+                .WSAEFAULT => unreachable,
+                else => |err| return unexpectedWSAError(err),
+            };
         }
     }
 };

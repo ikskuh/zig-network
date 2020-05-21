@@ -429,19 +429,19 @@ pub const SocketSet = struct {
     }
 
     /// Checks if the socket is ready to be read.
-    /// Only valid after the first call to `waitForSocketEvents()`.
+    /// Only valid after the first call to `waitForSocketEvent()`.
     pub fn isReadyRead(self: Self, sock: Socket) bool {
         return self.internal.isReadyRead(sock);
     }
 
     /// Checks if the socket is ready to be written.
-    /// Only valid after the first call to `waitForSocketEvents()`.
+    /// Only valid after the first call to `waitForSocketEvent()`.
     pub fn isReadyWrite(self: Self, sock: Socket) bool {
         return self.internal.isReadyWrite(sock);
     }
 
     /// Checks if the socket is faulty and cannot be used anymore.
-    /// Only valid after the first call to `waitForSocketEvents()`.
+    /// Only valid after the first call to `waitForSocketEvent()`.
     pub fn isFaulted(self: Self, sock: Socket) bool {
         return self.internal.isFaulted(sock);
     }
@@ -450,281 +450,286 @@ pub const SocketSet = struct {
 /// Implementation of SocketSet for each platform,
 /// keeps the thing above nice and clean, all functions get inlined.
 const OSLogic = switch (std.builtin.os.tag) {
-    // Linux uses `poll()` syscall to wait for socket events.
-    // This allows an arbitrary number of sockets to be handled.
-    .linux => struct {
-        const Self = @This();
-        // use poll on linux
-
-        fds: std.ArrayList(std.os.pollfd),
-
-        inline fn init(allocator: *std.mem.Allocator) Self {
-            return Self{
-                .fds = std.ArrayList(std.os.pollfd).init(allocator),
-            };
-        }
-
-        inline fn deinit(self: Self) void {
-            self.fds.deinit();
-        }
-
-        inline fn clear(self: *Self) void {
-            self.fds.shrink(0);
-        }
-
-        inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
-            // Always poll for errors as this is done anyways
-            var mask: i16 = std.os.POLLERR;
-
-            if (events.read)
-                mask |= std.os.POLLIN;
-            if (events.write)
-                mask |= std.os.POLLOUT;
-
-            for (self.fds.items) |*pfd| {
-                if (pfd.fd == sock.internal) {
-                    pfd.events |= mask;
-                    return;
-                }
-            }
-
-            try self.fds.append(std.os.pollfd{
-                .fd = sock.internal,
-                .events = mask,
-                .revents = 0,
-            });
-        }
-
-        inline fn remove(self: *Self, sock: Socket) void {
-            const index = for (self.fds.items) |item, i| {
-                if (item.fd == sock.internal)
-                    break i;
-            } else null;
-
-            if (index) |idx| {
-                _ = self.fds.swapRemove(idx);
-            }
-        }
-
-        inline fn checkMaskAnyBit(self: Self, sock: Socket, mask: i16) bool {
-            for (self.fds.items) |item| {
-                if (item.fd != sock.internal)
-                    continue;
-
-                if ((item.revents & mask) != 0) {
-                    return true;
-                }
-
-                return false;
-            }
-            return false;
-        }
-
-        inline fn isReadyRead(self: Self, sock: Socket) bool {
-            return self.checkMaskAnyBit(sock, std.os.POLLIN);
-        }
-
-        inline fn isReadyWrite(self: Self, sock: Socket) bool {
-            return self.checkMaskAnyBit(sock, std.os.POLLOUT);
-        }
-
-        inline fn isFaulted(self: Self, sock: Socket) bool {
-            return self.checkMaskAnyBit(sock, std.os.POLLERR);
-        }
-    },
-    .windows => struct {
-        // The windows struct fd_set uses a statically size array of 64 sockets by default.
-        // However, it is documented that one can create bigger sets and pass them into the functions that use them.
-        // Instead, we dynamically allocate the sets and reallocate them as needed.
-        // See https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
-        const FdSet = extern struct {
-            padding1: c_uint = 0, // This is added to guarantee &size is 8 byte aligned
-            capacity: c_uint,
-            size: c_uint,
-            padding2: c_uint = 0, // This is added to gurantee &fds is 8 byte aligned
-            // fds: SOCKET[size]
-
-            fn fdSlice(self: *align(8) FdSet) []windows_data.ws2_32.SOCKET {
-                return @ptrCast([*]windows_data.ws2_32.SOCKET, @ptrCast([*]u8, self) + 4 * @sizeOf(c_uint))[0..self.size];
-            }
-
-            fn make(allocator: *std.mem.Allocator) !*align(8) FdSet {
-                // Initialize with enough space for 8 sockets.
-                var mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
-
-                var fd_set = @ptrCast(*align(8) FdSet, mem);
-                fd_set.* = .{ .capacity = 8, .size = 0 };
-                return fd_set;
-            }
-
-            fn clear(self: *align(8) FdSet) void {
-                self.size = 0;
-            }
-
-            fn memSlice(self: *align(8) FdSet) []u8 {
-                return @ptrCast([*]u8, self)[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows_data.ws2_32.SOCKET))];
-            }
-
-            fn deinit(self: *align(8) FdSet, allocator: *std.mem.Allocator) void {
-                allocator.free(self.memSlice());
-            }
-
-            fn containsFd(self: *align(8) FdSet, fd: windows_data.ws2_32.SOCKET) bool {
-                for (self.fdSlice()) |ex_fd| {
-                    if (ex_fd == fd) return true;
-                }
-                return false;
-            }
-
-            fn addFd(fd_set: **align(8) FdSet, allocator: *std.mem.Allocator, new_fd: windows_data.ws2_32.SOCKET) !void {
-                if (fd_set.*.size == fd_set.*.capacity) {
-                    // Double our capacity.
-                    const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows_data.ws2_32.SOCKET);
-                    fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.alignedRealloc(fd_set.*.memSlice(), 8, new_mem_size)).ptr);
-                    fd_set.*.capacity *= 2;
-                }
-
-                fd_set.*.size += 1;
-                fd_set.*.fdSlice()[fd_set.*.size - 1] = new_fd;
-            }
-
-            fn getSelectPointer(self: *align(8) FdSet) ?[*]u8 {
-                if (self.size == 0) return null;
-                return @ptrCast([*]u8, self) + 2 * @sizeOf(c_uint);
-            }
-        };
-
-        const Self = @This();
-
-        allocator: *std.mem.Allocator,
-
-        read_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
-        write_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
-
-        read_fd_set: *align(8) FdSet,
-        write_fd_set: *align(8) FdSet,
-        except_fd_set: *align(8) FdSet,
-
-        inline fn init(allocator: *std.mem.Allocator) !Self {
-            // TODO: https://github.com/ziglang/zig/issues/5391
-            var read_fds = std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET){};
-            var write_fds = std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET){};
-            try read_fds.ensureCapacity(allocator, 8);
-            try write_fds.ensureCapacity(allocator, 8);
-
-            return Self{
-                .allocator = allocator,
-                .read_fds = read_fds,
-                .write_fds = write_fds,
-                .read_fd_set = try FdSet.make(allocator),
-                .write_fd_set = try FdSet.make(allocator),
-                .except_fd_set = try FdSet.make(allocator),
-            };
-        }
-
-        inline fn deinit(self: *Self) void {
-            self.read_fds.deinit(self.allocator);
-            self.write_fds.deinit(self.allocator);
-
-            self.read_fd_set.deinit(self.allocator);
-            self.write_fd_set.deinit(self.allocator);
-            self.except_fd_set.deinit(self.allocator);
-        }
-
-        inline fn clear(self: *Self) void {
-            self.read_fds.shrink(0);
-            self.write_fds.shrink(0);
-
-            self.read_fd_set.clear();
-            self.write_fd_set.clear();
-            self.except_fd_set.clear();
-        }
-
-        inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
-            if (events.read) {
-                for (self.read_fds.items) |fd| {
-                    if (fd == sock.internal) return;
-                }
-                try self.read_fds.append(self.allocator, sock.internal);
-            }
-            if (events.write) {
-                for (self.write_fds.items) |fd| {
-                    if (fd == sock.internal) return;
-                }
-                try self.write_fds.append(self.allocator, sock.internal);
-            }
-        }
-
-        inline fn remove(self: *Self, sock: Socket) void {
-            for (self.read_fds.items) |fd, idx| {
-                if (fd == sock.internal) {
-                    _ = self.read_fds.swapRemove(idx);
-                    break;
-                }
-            }
-            for (self.write_fds.items) |fd, idx| {
-                if (fd == sock.internal) {
-                    _ = self.write_fds.swapRemove(idx);
-                    break;
-                }
-            }
-        }
-
-        const Set = enum {
-            read,
-            write,
-            except,
-        };
-
-        inline fn getFdSet(self: *Self, comptime set_selection: Set) !?[*]u8 {
-            const set_ptr = switch (set_selection) {
-                .read => &self.read_fd_set,
-                .write => &self.write_fd_set,
-                .except => &self.except_fd_set,
-            };
-
-            set_ptr.*.clear();
-            if (set_selection == .read or set_selection == .except) {
-                for (self.read_fds.items) |fd| {
-                    try FdSet.addFd(set_ptr, self.allocator, fd);
-                }
-            }
-
-            if (set_selection == .write) {
-                for (self.write_fds.items) |fd| {
-                    try FdSet.addFd(set_ptr, self.allocator, fd);
-                }
-            } else if (set_selection == .except) {
-                for (self.write_fds.items) |fd| {
-                    if (set_ptr.*.containsFd(fd)) continue;
-                    try FdSet.addFd(set_ptr, self.allocator, fd);
-                }
-            }
-            return set_ptr.*.getSelectPointer();
-        }
-
-        inline fn isReadyRead(self: Self, sock: Socket) bool {
-            if (self.read_fd_set.getSelectPointer()) |ptr| {
-                return windows_data.__WSAFDIsSet(sock.internal, ptr);
-            }
-            return false;
-        }
-
-        inline fn isReadyWrite(self: Self, sock: Socket) bool {
-            if (self.write_fd_set.getSelectPointer()) |ptr| {
-                return windows_data.__WSAFDIsSet(sock.internal, ptr);
-            }
-            return false;
-        }
-
-        inline fn isFaulted(self: Self, sock: Socket) bool {
-            if (self.except_fd_set.getSelectPointer()) |ptr| {
-                return windows_data.__WSAFDIsSet(sock.internal, ptr);
-            }
-            return false;
-        }
-    },
+    .windows => WindowsOSLogic,
+    .linux => LinuxOSLogic,
     else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
+};
+
+// Linux uses `poll()` syscall to wait for socket events.
+// This allows an arbitrary number of sockets to be handled.
+const LinuxOSLogic = struct {
+    const Self = @This();
+    // use poll on linux
+
+    fds: std.ArrayList(std.os.pollfd),
+
+    inline fn init(allocator: *std.mem.Allocator) Self {
+        return Self{
+            .fds = std.ArrayList(std.os.pollfd).init(allocator),
+        };
+    }
+
+    inline fn deinit(self: Self) void {
+        self.fds.deinit();
+    }
+
+    inline fn clear(self: *Self) void {
+        self.fds.shrink(0);
+    }
+
+    inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
+        // Always poll for errors as this is done anyways
+        var mask: i16 = std.os.POLLERR;
+
+        if (events.read)
+            mask |= std.os.POLLIN;
+        if (events.write)
+            mask |= std.os.POLLOUT;
+
+        for (self.fds.items) |*pfd| {
+            if (pfd.fd == sock.internal) {
+                pfd.events |= mask;
+                return;
+            }
+        }
+
+        try self.fds.append(std.os.pollfd{
+            .fd = sock.internal,
+            .events = mask,
+            .revents = 0,
+        });
+    }
+
+    inline fn remove(self: *Self, sock: Socket) void {
+        const index = for (self.fds.items) |item, i| {
+            if (item.fd == sock.internal)
+                break i;
+        } else null;
+
+        if (index) |idx| {
+            _ = self.fds.swapRemove(idx);
+        }
+    }
+
+    inline fn checkMaskAnyBit(self: Self, sock: Socket, mask: i16) bool {
+        for (self.fds.items) |item| {
+            if (item.fd != sock.internal)
+                continue;
+
+            if ((item.revents & mask) != 0) {
+                return true;
+            }
+
+            return false;
+        }
+        return false;
+    }
+
+    inline fn isReadyRead(self: Self, sock: Socket) bool {
+        return self.checkMaskAnyBit(sock, std.os.POLLIN);
+    }
+
+    inline fn isReadyWrite(self: Self, sock: Socket) bool {
+        return self.checkMaskAnyBit(sock, std.os.POLLOUT);
+    }
+
+    inline fn isFaulted(self: Self, sock: Socket) bool {
+        return self.checkMaskAnyBit(sock, std.os.POLLERR);
+    }
+};
+
+// On windows, we use select()
+const WindowsOSLogic = struct {
+    // The windows struct fd_set uses a statically size array of 64 sockets by default.
+    // However, it is documented that one can create bigger sets and pass them into the functions that use them.
+    // Instead, we dynamically allocate the sets and reallocate them as needed.
+    // See https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
+    const FdSet = extern struct {
+        padding1: c_uint = 0, // This is added to guarantee &size is 8 byte aligned
+        capacity: c_uint,
+        size: c_uint,
+        padding2: c_uint = 0, // This is added to gurantee &fds is 8 byte aligned
+        // fds: SOCKET[size]
+
+        fn fdSlice(self: *align(8) FdSet) []windows_data.ws2_32.SOCKET {
+            return @ptrCast([*]windows_data.ws2_32.SOCKET, @ptrCast([*]u8, self) + 4 * @sizeOf(c_uint))[0..self.size];
+        }
+
+        fn make(allocator: *std.mem.Allocator) !*align(8) FdSet {
+            // Initialize with enough space for 8 sockets.
+            var mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
+
+            var fd_set = @ptrCast(*align(8) FdSet, mem);
+            fd_set.* = .{ .capacity = 8, .size = 0 };
+            return fd_set;
+        }
+
+        fn clear(self: *align(8) FdSet) void {
+            self.size = 0;
+        }
+
+        fn memSlice(self: *align(8) FdSet) []u8 {
+            return @ptrCast([*]u8, self)[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows_data.ws2_32.SOCKET))];
+        }
+
+        fn deinit(self: *align(8) FdSet, allocator: *std.mem.Allocator) void {
+            allocator.free(self.memSlice());
+        }
+
+        fn containsFd(self: *align(8) FdSet, fd: windows_data.ws2_32.SOCKET) bool {
+            for (self.fdSlice()) |ex_fd| {
+                if (ex_fd == fd) return true;
+            }
+            return false;
+        }
+
+        fn addFd(fd_set: **align(8) FdSet, allocator: *std.mem.Allocator, new_fd: windows_data.ws2_32.SOCKET) !void {
+            if (fd_set.*.size == fd_set.*.capacity) {
+                // Double our capacity.
+                const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows_data.ws2_32.SOCKET);
+                fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.alignedRealloc(fd_set.*.memSlice(), 8, new_mem_size)).ptr);
+                fd_set.*.capacity *= 2;
+            }
+
+            fd_set.*.size += 1;
+            fd_set.*.fdSlice()[fd_set.*.size - 1] = new_fd;
+        }
+
+        fn getSelectPointer(self: *align(8) FdSet) ?[*]u8 {
+            if (self.size == 0) return null;
+            return @ptrCast([*]u8, self) + 2 * @sizeOf(c_uint);
+        }
+    };
+
+    const Self = @This();
+
+    allocator: *std.mem.Allocator,
+
+    read_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
+    write_fds: std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET),
+
+    read_fd_set: *align(8) FdSet,
+    write_fd_set: *align(8) FdSet,
+    except_fd_set: *align(8) FdSet,
+
+    inline fn init(allocator: *std.mem.Allocator) !Self {
+        // TODO: https://github.com/ziglang/zig/issues/5391
+        var read_fds = std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET){};
+        var write_fds = std.ArrayListUnmanaged(windows_data.ws2_32.SOCKET){};
+        try read_fds.ensureCapacity(allocator, 8);
+        try write_fds.ensureCapacity(allocator, 8);
+
+        return Self{
+            .allocator = allocator,
+            .read_fds = read_fds,
+            .write_fds = write_fds,
+            .read_fd_set = try FdSet.make(allocator),
+            .write_fd_set = try FdSet.make(allocator),
+            .except_fd_set = try FdSet.make(allocator),
+        };
+    }
+
+    inline fn deinit(self: *Self) void {
+        self.read_fds.deinit(self.allocator);
+        self.write_fds.deinit(self.allocator);
+
+        self.read_fd_set.deinit(self.allocator);
+        self.write_fd_set.deinit(self.allocator);
+        self.except_fd_set.deinit(self.allocator);
+    }
+
+    inline fn clear(self: *Self) void {
+        self.read_fds.shrink(0);
+        self.write_fds.shrink(0);
+
+        self.read_fd_set.clear();
+        self.write_fd_set.clear();
+        self.except_fd_set.clear();
+    }
+
+    inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
+        if (events.read) {
+            for (self.read_fds.items) |fd| {
+                if (fd == sock.internal) return;
+            }
+            try self.read_fds.append(self.allocator, sock.internal);
+        }
+        if (events.write) {
+            for (self.write_fds.items) |fd| {
+                if (fd == sock.internal) return;
+            }
+            try self.write_fds.append(self.allocator, sock.internal);
+        }
+    }
+
+    inline fn remove(self: *Self, sock: Socket) void {
+        for (self.read_fds.items) |fd, idx| {
+            if (fd == sock.internal) {
+                _ = self.read_fds.swapRemove(idx);
+                break;
+            }
+        }
+        for (self.write_fds.items) |fd, idx| {
+            if (fd == sock.internal) {
+                _ = self.write_fds.swapRemove(idx);
+                break;
+            }
+        }
+    }
+
+    const Set = enum {
+        read,
+        write,
+        except,
+    };
+
+    inline fn getFdSet(self: *Self, comptime set_selection: Set) !?[*]u8 {
+        const set_ptr = switch (set_selection) {
+            .read => &self.read_fd_set,
+            .write => &self.write_fd_set,
+            .except => &self.except_fd_set,
+        };
+
+        set_ptr.*.clear();
+        if (set_selection == .read or set_selection == .except) {
+            for (self.read_fds.items) |fd| {
+                try FdSet.addFd(set_ptr, self.allocator, fd);
+            }
+        }
+
+        if (set_selection == .write) {
+            for (self.write_fds.items) |fd| {
+                try FdSet.addFd(set_ptr, self.allocator, fd);
+            }
+        } else if (set_selection == .except) {
+            for (self.write_fds.items) |fd| {
+                if (set_ptr.*.containsFd(fd)) continue;
+                try FdSet.addFd(set_ptr, self.allocator, fd);
+            }
+        }
+        return set_ptr.*.getSelectPointer();
+    }
+
+    inline fn isReadyRead(self: Self, sock: Socket) bool {
+        if (self.read_fd_set.getSelectPointer()) |ptr| {
+            return windows_data.__WSAFDIsSet(sock.internal, ptr);
+        }
+        return false;
+    }
+
+    inline fn isReadyWrite(self: Self, sock: Socket) bool {
+        if (self.write_fd_set.getSelectPointer()) |ptr| {
+            return windows_data.__WSAFDIsSet(sock.internal, ptr);
+        }
+        return false;
+    }
+
+    inline fn isFaulted(self: Self, sock: Socket) bool {
+        if (self.except_fd_set.getSelectPointer()) |ptr| {
+            return windows_data.__WSAFDIsSet(sock.internal, ptr);
+        }
+        return false;
+    }
 };
 
 /// Waits until sockets in SocketSet are ready to read/write or have a fault condition.
@@ -749,7 +754,6 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             } else .{ .tv_sec = 0, .tv_usec = 0 };
 
             // Windows ignores first argument.
-            // return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
             return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
         },
         .linux => return try std.os.poll(

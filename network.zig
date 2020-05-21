@@ -538,19 +538,23 @@ const OSLogic = switch (std.builtin.os.tag) {
         // Instead, we dynamically allocate the sets and reallocate them as needed.
         // See https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
         const FdSet = extern struct {
+            padding1: c_uint = 0, // This is added to guarantee &size is 8 byte aligned
             capacity: c_uint,
             size: c_uint,
+            padding2: c_uint = 0, // This is added to gurantee &fds is 8 byte aligned
+            // fds: SOCKET[size]
 
             fn fdSlice(self: *align(8) FdSet) []windows_data.ws2_32.SOCKET {
-                return @ptrCast([*]windows_data.ws2_32.SOCKET, @ptrCast([*]u8, self) + 2 * @sizeOf(c_uint))[0..self.size];
+                return @ptrCast([*]windows_data.ws2_32.SOCKET, @ptrCast([*]u8, self) + 4 * @sizeOf(c_uint))[0..self.size];
             }
 
             fn make(allocator: *std.mem.Allocator) !*align(8) FdSet {
                 // Initialize with enough space for 8 sockets.
-                var mem = try allocator.alignedAlloc(u8, 8, 2 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
-                @ptrCast(*c_uint, mem.ptr).* = 8;
-                @ptrCast(*c_uint, mem.ptr + @sizeOf(c_uint)).* = 0;
-                return @ptrCast(*FdSet, mem);
+                var mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows_data.ws2_32.SOCKET));
+
+                var fd_set = @ptrCast(*align(8) FdSet, mem);
+                fd_set.* = .{ .capacity = 8, .size = 0 };
+                return fd_set;
             }
 
             fn clear(self: *align(8) FdSet) void {
@@ -558,7 +562,7 @@ const OSLogic = switch (std.builtin.os.tag) {
             }
 
             fn memSlice(self: *align(8) FdSet) []u8 {
-                return @ptrCast([*]u8, self)[0..(2 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows_data.ws2_32.SOCKET))];
+                return @ptrCast([*]u8, self)[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows_data.ws2_32.SOCKET))];
             }
 
             fn deinit(self: *align(8) FdSet, allocator: *std.mem.Allocator) void {
@@ -575,7 +579,7 @@ const OSLogic = switch (std.builtin.os.tag) {
             fn addFd(fd_set: **align(8) FdSet, allocator: *std.mem.Allocator, new_fd: windows_data.ws2_32.SOCKET) !void {
                 if (fd_set.*.size == fd_set.*.capacity) {
                     // Double our capacity.
-                    const new_mem_size = 2 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows_data.ws2_32.SOCKET);
+                    const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows_data.ws2_32.SOCKET);
                     fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.alignedRealloc(fd_set.*.memSlice(), 8, new_mem_size)).ptr);
                     fd_set.*.capacity *= 2;
                 }
@@ -586,7 +590,7 @@ const OSLogic = switch (std.builtin.os.tag) {
 
             fn getSelectPointer(self: *align(8) FdSet) ?[*]u8 {
                 if (self.size == 0) return null;
-                return @ptrCast([*]u8, self) + @sizeOf(c_uint);
+                return @ptrCast([*]u8, self) + 2 * @sizeOf(c_uint);
             }
         };
 
@@ -610,8 +614,8 @@ const OSLogic = switch (std.builtin.os.tag) {
 
             return Self{
                 .allocator = allocator,
-                .read_fds = .{},
-                .write_fds = .{},
+                .read_fds = read_fds,
+                .write_fds = write_fds,
                 .read_fd_set = try FdSet.make(allocator),
                 .write_fd_set = try FdSet.make(allocator),
                 .except_fd_set = try FdSet.make(allocator),
@@ -746,7 +750,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
 
             // Windows ignores first argument.
             // return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
-            return try windows_data.windows_select(0, null, write_set, null, &tm);
+            return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
         },
         .linux => return try std.os.poll(
             set.internal.fds.items,

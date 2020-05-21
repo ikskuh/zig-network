@@ -648,9 +648,9 @@ const WindowsOSLogic = struct {
     }
 
     inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
-        if (events.read) {
+        if (events.read) read_block: {
             for (self.read_fds.items) |fd| {
-                if (fd == sock.internal) return;
+                if (fd == sock.internal) break :read_block;
             }
             try self.read_fds.append(self.allocator, sock.internal);
         }
@@ -754,7 +754,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             } else .{ .tv_sec = 0, .tv_usec = 0 };
 
             // Windows ignores first argument.
-            return try windows_data.windows_select(0, read_set, write_set, except_set, &tm);
+            return try windows_data.windows_select(0, read_set, write_set, except_set, if(timeout != null) &tm else null);
         },
         .linux => return try std.os.poll(
             set.internal.fds.items,

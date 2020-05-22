@@ -51,10 +51,53 @@ pub const Address = union(AddressFamily) {
     pub const IPv6 = struct {
         const Self = @This();
 
+        value: [16]u8,
+        scope_id: u32,
+
         pub const any = Self{};
 
-        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
-            unreachable;
+        pub fn init(value: [16]u8, scope_id: u32) Self {
+            return Self{ .value = value, .scope_id = scope_id };
+        }
+
+        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
+            if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
+                try std.fmt.format(out_stream, "[::ffff:{}.{}.{}.{}]", .{
+                    self.value[12],
+                    self.value[13],
+                    self.value[14],
+                    self.value[15],
+                });
+                return;
+            }
+            const big_endian_parts = @ptrCast(*align(1) const [8]u16, &self.value);
+            const native_endian_parts = switch (std.builtin.endian) {
+                .Big => big_endian_parts.*,
+                .Little => blk: {
+                    var buf: [8]u16 = undefined;
+                    for (big_endian_parts) |part, i| {
+                        buf[i] = std.mem.bigToNative(u16, part);
+                    }
+                    break :blk buf;
+                },
+            };
+            try out_stream.writeAll("[");
+            var i: usize = 0;
+            var abbrv = false;
+            while (i < native_endian_parts.len) : (i += 1) {
+                if (native_endian_parts[i] == 0) {
+                    if (!abbrv) {
+                        try out_stream.writeAll(if (i == 0) "::" else ":");
+                        abbrv = true;
+                    }
+                    continue;
+                }
+                try std.fmt.format(out_stream, "{x}", .{native_endian_parts[i]});
+                if (i != native_endian_parts.len - 1) {
+                    try out_stream.writeAll(":");
+                }
+            }
+            try out_stream.writeAll("]");
         }
     };
 
@@ -154,7 +197,13 @@ pub const EndPoint = struct {
                 };
             },
             .ipv6 => |addr| {
-                unreachable;
+                @ptrCast(*std.os.sockaddr_in6, &result).* = std.os.sockaddr_in6{
+                    .family = std.os.AF_INET6,
+                    .port = std.mem.nativeToBig(u16, self.port),
+                    .flowinfo = 0,
+                    .addr = addr.value,
+                    .scope_id = addr.scope_id,
+                };
             },
         }
         return result;
@@ -850,8 +899,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
 
         const hints = addrinfo{
             .flags = AI_NUMERICSERV,
-            // TODO: IPv6 support
-            .family = std.os.AF_INET,
+            .family = std.os.AF_UNSPEC,
             .socktype = std.os.SOCK_STREAM,
             .protocol = std.os.IPPROTO_TCP,
             .canonname = null,
@@ -868,8 +916,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
             var count: usize = 0;
             var it: ?*addrinfo = res;
             while (it) |info| : (it = info.next) {
-                // TODO: IPv6 support.
-                if (info.addr != null and info.addr.?.family != std.os.AF_INET6) {
+                if (info.addr != null) {
                     count += 1;
                 }
             }
@@ -880,15 +927,16 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         var it: ?*addrinfo = res;
         var i: usize = 0;
         while (it) |info| : (it = info.next) {
-            // TODO: IPv6 support.
             const sockaddr = info.addr orelse continue;
-            const bytes = @ptrCast(*const [4]u8, sockaddr.data[2..]);
-
             const addr: Address = switch (sockaddr.family) {
-                std.os.AF_INET => .{
-                    .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]),
+                std.os.AF_INET => block: {
+                    const bytes = @ptrCast(*const [4]u8, sockaddr.data[2..]);
+                    break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                 },
-                std.os.AF_INET6 => continue,
+                std.os.AF_INET6 => block: {
+                    const sockaddr_in6 = @ptrCast(*align(1) const std.os.sockaddr_in6, sockaddr);
+                    break :block .{ .ipv6 = Address.IPv6.init(sockaddr_in6.addr, sockaddr_in6.scope_id) };
+                },
                 else => unreachable,
             };
 
@@ -917,10 +965,8 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
             result.canon_name = try std.mem.dupe(arena, u8, cname);
         }
 
-        // TODO: IPv6 support
         var count: usize = 0;
         for (address_list.addrs) |net_addr| {
-            if (net_addr.any.family != std.os.AF_INET) continue;
             count += 1;
         }
 
@@ -928,10 +974,17 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
 
         var idx: usize = 0;
         for (address_list.addrs) |net_addr| {
-            if (net_addr.any.family != std.os.AF_INET) continue;
-            const bytes = @ptrCast(*const [4]u8, &net_addr.in.addr);
+            const addr: Address = switch (net_addr.any.family) {
+                std.os.AF_INET => block: {
+                    const bytes = @ptrCast(*const [4]u8, &net_addr.in.addr);
+                    break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
+                },
+                std.os.AF_INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.addr, net_addr.in6.scope_id) },
+                else => unreachable,
+            };
+
             result.endpoints[idx] = EndPoint{
-                .address = .{ .ipv4 = .{ .value = bytes.* } },
+                .address = addr,
                 .port = port,
             };
             idx += 1;

@@ -1,7 +1,19 @@
 const std = @import("std");
 const network = @import("network.zig");
 
-test "addrlist" {
+test "Get endpoint list" {
+    try network.init();
+    defer network.deinit();
+
+    const endpoint_list = try network.getEndpointList(std.heap.page_allocator, "google.com", 80);
+    defer endpoint_list.deinit();
+
+    for (endpoint_list.endpoints) |endpt| {
+        std.debug.warn("{}\n", .{endpt});
+    }
+}
+
+test "Connect to an echo server" {
     try network.init();
     defer network.deinit();
 

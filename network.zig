@@ -29,6 +29,7 @@ pub const Address = union(AddressFamily) {
 
         pub const any = IPv4.init(0, 0, 0, 0);
         pub const broadcast = IPv4.init(255, 255, 255, 255);
+        pub const loopback = IPv4.init(127, 0, 0, 1);
 
         value: [4]u8,
 
@@ -51,10 +52,11 @@ pub const Address = union(AddressFamily) {
     pub const IPv6 = struct {
         const Self = @This();
 
+        pub const any = std.mem.zeroes(Self);
+        pub const loopback = IPv6.init([1]u8{0} ** 15 ++ [1]u8{1}, 0);
+
         value: [16]u8,
         scope_id: u32,
-
-        pub const any = Self{};
 
         pub fn init(value: [16]u8, scope_id: u32) Self {
             return Self{ .value = value, .scope_id = scope_id };
@@ -168,15 +170,26 @@ pub const EndPoint = struct {
                 const value = @ptrCast(*const std.os.sockaddr_in, @alignCast(4, src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
-                    .address = Address{
-                        .ipv4 = Address.IPv4{
+                    .address = .{
+                        .ipv4 = .{
                             .value = @bitCast([4]u8, value.addr),
                         },
                     },
                 };
             },
             std.os.AF_INET6 => {
-                return error.UnsupportedAddressFamily;
+                if (size < @sizeOf(std.os.sockaddr_in6))
+                    return error.InsufficientBytes;
+                const value = @ptrCast(*const std.os.sockaddr_in6, @alignCast(4, src));
+                return EndPoint{
+                    .port = std.mem.bigToNative(u16, value.port),
+                    .address = .{
+                        .ipv6 = .{
+                            .value = value.addr,
+                            .scope_id = value.scope_id,
+                        },
+                    },
+                };
             },
             else => {
                 std.debug.warn("got invalid socket address: {}\n", .{src});
@@ -185,28 +198,32 @@ pub const EndPoint = struct {
         }
     }
 
-    fn toSocketAddress(self: Self) std.os.sockaddr {
+    pub const SockAddr = union(AddressFamily) {
+        ipv4: std.os.sockaddr_in,
+        ipv6: std.os.sockaddr_in6,
+    };
+
+    fn toSocketAddress(self: Self) SockAddr {
         var result: std.os.sockaddr align(8) = undefined;
-        switch (self.address) {
-            .ipv4 => |addr| {
-                @ptrCast(*std.os.sockaddr_in, &result).* = std.os.sockaddr_in{
+        return switch (self.address) {
+            .ipv4 => |addr| SockAddr{
+                .ipv4 = .{
                     .family = std.os.AF_INET,
                     .port = std.mem.nativeToBig(u16, self.port),
                     .addr = @bitCast(u32, addr.value),
                     .zero = [_]u8{0} ** 8,
-                };
+                },
             },
-            .ipv6 => |addr| {
-                @ptrCast(*std.os.sockaddr_in6, &result).* = std.os.sockaddr_in6{
+            .ipv6 => |addr| SockAddr{
+                .ipv6 = .{
                     .family = std.os.AF_INET6,
                     .port = std.mem.nativeToBig(u16, self.port),
                     .flowinfo = 0,
                     .addr = addr.value,
                     .scope_id = addr.scope_id,
-                };
+                },
             },
-        }
-        return result;
+        };
     }
 };
 
@@ -251,8 +268,10 @@ pub const Socket = struct {
     pub fn bind(self: Self, ep: EndPoint) !void {
         const bind_fn = if (is_windows) windows_data.windows_bind else std.os.bind;
 
-        var sockaddr = ep.toSocketAddress();
-        try bind_fn(self.internal, &sockaddr, @sizeOf(@TypeOf(sockaddr)));
+        switch (ep.toSocketAddress()) {
+            .ipv4 => |sockaddr| try bind_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try bind_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+        }
     }
 
     /// Binds the socket to all supported addresses on the local device.
@@ -277,8 +296,10 @@ pub const Socket = struct {
             return error.AddressFamilyMismach;
 
         const connect_fn = if (is_windows) windows_data.windows_connect else std.os.connect;
-        const sa = target.toSocketAddress();
-        try connect_fn(self.internal, &sa, @sizeOf(@TypeOf(sa)));
+        switch (target.toSocketAddress()) {
+            .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+        }
     }
 
     /// Makes this socket a TCP server and allows others to connect to
@@ -331,14 +352,16 @@ pub const Socket = struct {
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows_data.windows_recvfrom else std.os.recvfrom;
 
-        var addr: std.os.sockaddr align(4) = undefined;
-        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr);
+        // Use the ipv6 sockaddr to gurantee data will fit.
+        var addr: std.os.sockaddr_in6 align(4) = undefined;
+        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
-        const len = try recvfrom_fn(self.internal, data, 0, &addr, &size);
+        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        const len = try recvfrom_fn(self.internal, data, 0, addr_ptr, &size);
 
         return ReceiveFrom{
             .numberOfBytes = len,
-            .sender = try EndPoint.fromSocketAddress(&addr, size),
+            .sender = try EndPoint.fromSocketAddress(addr_ptr, size),
         };
     }
 
@@ -347,8 +370,10 @@ pub const Socket = struct {
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
         const sendto_fn = if (is_windows) windows_data.windows_sendto else std.os.sendto;
 
-        const sa = receiver.toSocketAddress();
-        return try sendto_fn(self.internal, data, 0, &sa, @sizeOf(std.os.sockaddr));
+        switch (ep.toSocketAddress()) {
+            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, 0, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, 0, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+        }
     }
 
     /// Sets the socket option `SO_REUSEPORT` which allows
@@ -365,22 +390,24 @@ pub const Socket = struct {
     pub fn getLocalEndPoint(self: Self) !EndPoint {
         const getsockname_fn = if (is_windows) windows_data.windows_getsockname else std.os.getsockname;
 
-        var addr: std.os.sockaddr align(4) = undefined;
-        var size: std.os.socklen_t = @sizeOf(@TypeOf(addr));
+        var addr: std.os.sockaddr_in6 align(4) = undefined;
+        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
-        try getsockname_fn(self.internal, &addr, &size);
+        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        try getsockname_fn(self.internal, addr_ptr, &size);
 
-        return try EndPoint.fromSocketAddress(&addr, size);
+        return try EndPoint.fromSocketAddress(addr_ptr, size);
     }
 
     /// Retrieves the end point to which the socket is connected.
     pub fn getRemoteEndPoint(self: Self) !EndPoint {
         const getpeername_fn = if (is_windows) windows_data.windows_getpeername else getpeername;
 
-        var addr: std.os.sockaddr align(4) = undefined;
-        var size: std.os.socklen_t = @sizeOf(@TypeOf(addr));
+        var addr: std.os.sockaddr_in6 align(4) = undefined;
+        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
-        try getpeername_fn(self.internal, &addr, &size);
+        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        try getpeername_fn(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(&addr, size);
     }

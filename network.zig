@@ -316,14 +316,15 @@ pub const Socket = struct {
         const accept4_fn = if (is_windows) windows_data.windows_accept4 else std.os.accept4;
         const close_fn = if (is_windows) windows_data.windows_close else std.os.close;
 
-        var addr: std.os.sockaddr = undefined;
-        var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr);
+        var addr: std.os.sockaddr_in6 = undefined;
+        var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
-        const fd = try accept4_fn(self.internal, &addr, &addr_size, 0);
+        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, 0);
         errdefer close_fn(fd);
 
         return Socket{
-            .family = try AddressFamily.fromNativeAddressFamily(addr.family),
+            .family = try AddressFamily.fromNativeAddressFamily(addr_ptr.family),
             .internal = fd,
         };
     }
@@ -409,7 +410,7 @@ pub const Socket = struct {
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         try getpeername_fn(self.internal, addr_ptr, &size);
 
-        return try EndPoint.fromSocketAddress(&addr, size);
+        return try EndPoint.fromSocketAddress(addr_ptr, size);
     }
 
     pub const MulticastGroup = struct {

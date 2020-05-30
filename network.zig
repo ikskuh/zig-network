@@ -1092,8 +1092,6 @@ const windows = struct {
         extern "ws2_32" fn bind(s: ws2_32.SOCKET, addr: [*c]const std.os.sockaddr, namelen: std.os.socklen_t) callconv(.Stdcall) c_int;
         extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const addrinfo, result: **addrinfo) callconv(.Stdcall) c_int;
         extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(.Stdcall) void;
-
-        extern "ws2_32" fn ioctlsocket(s: ws2_32.SOCKET, cmd: c_long, argp: [*c]c_ulong) callconv(.Stdcall) c_int;
     };
 
     fn socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
@@ -1105,6 +1103,11 @@ const windows = struct {
             0,
             ws2_32.WSA_FLAG_OVERLAPPED,
         );
+
+        if (std.io.is_async and std.event.Loop.instance != null) {
+            const loop = std.event.Loop.instance.?;
+            _ = try CreateIoCompletionPort(sock, loop.os_data.io_port, undefined, undefined);
+        }
 
         return sock;
     }
@@ -1149,6 +1152,52 @@ const windows = struct {
         dest_addr: ?*const std.os.sockaddr,
         addrlen: std.os.socklen_t,
     ) std.os.SendError!usize {
+        if (std.io.is_async and std.event.Loop.instance != null) {
+            const loop = std.event.Loop.instance.?;
+
+            const Const_WSABUF = extern struct {
+                len: ULONG,
+                buf: [*]const u8,
+            };
+
+            var wsa_buf = Const_WSABUF{
+                .len = @intCast(ULONG, buf.len),
+                .buf = buf.ptr,
+            };
+
+            var resume_node = std.event.Loop.ResumeNode.Basic{
+                .base = .{
+                    .id = .Basic,
+                    .handle = @frame(),
+                    .overlapped = std.event.Loop.ResumeNode.overlapped_init,
+                },
+            };
+
+            loop.beginOneEvent();
+            suspend {
+                _ = ws2_32.WSASendTo(
+                    sock,
+                    @ptrCast([*]ws2_32.WSABUF, &wsa_buf),
+                    1,
+                    null,
+                    @intCast(DWORD, flags),
+                    dest_addr,
+                    addrlen,
+                    @ptrCast(*ws2_32.WSAOVERLAPPED, &resume_node.base.overlapped),
+                    null,
+                );
+            }
+            var bytes_transferred: DWORD = undefined;
+            if (kernel32.GetOverlappedResult(sock, &resume_node.base.overlapped, &bytes_transferred, FALSE) == 0) {
+                switch (kernel32.GetLastError()) {
+                    .IO_PENDING => unreachable,
+                    // TODO Handle more errors
+                    else => |err| return unexpectedError(err),
+                }
+            }
+            return bytes_transferred;
+        }
+
         while (true) {
             const result = funcs.sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
@@ -1182,7 +1231,7 @@ const windows = struct {
         src_addr: ?*std.os.sockaddr,
         addrlen: ?*std.os.socklen_t,
     ) std.os.RecvFromError!usize {
-        if (std.io.is_async) {
+        if (std.io.is_async and std.event.Loop.instance != null) {
             const loop = std.event.Loop.instance.?;
 
             const wsa_buf = ws2_32.WSABUF{
@@ -1199,11 +1248,10 @@ const windows = struct {
                 },
             };
 
-            // TODO only call create io completion port once per fd
-            _ = CreateIoCompletionPort(sock, loop.os_data.io_port, undefined, undefined) catch undefined;
             loop.beginOneEvent();
             suspend {
-                // TODO 7th arg should be a pointer, report wrong signature in a zig issue.
+                // TODO 7th arg (addrlen) should be a pointer, report wrong signature in a zig issue.
+                //      See https://github.com/ziglang/zig/pull/5477
                 _ = ws2_32.WSARecvFrom(
                     sock,
                     @ptrCast([*]const ws2_32.WSABUF, &wsa_buf),

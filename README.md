@@ -9,6 +9,6 @@ Small network abstraction layer around TCP & UDP.
 - UDP multicast support
 
 ## Notes
-On Windows, all function calls will be blocking and will not interact with
-the standard library event loop, regardless of the io_mode set in the root
-file of your program.  
+On Windows receive and send function calls are asynchronous and cooperate with the standard library event loop
+when `io_mode = .evented` is set in the root file of your program.  
+Other calls (connect, listen, accept etc) are blocking.  

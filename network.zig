@@ -313,7 +313,7 @@ pub const Socket = struct {
     /// Waits until a new TCP client connects to this socket and accepts the incoming TCP connection.
     /// This function is only allowed for a bound TCP socket. `listen()` must have been called before!
     pub fn accept(self: Self) !Socket {
-        const accept4_fn = if (is_windows) windows.accept4 else std.os.accept4;
+        const accept4_fn = if (is_windows) windows.accept4 else std.os.accept;
         const close_fn = if (is_windows) windows.close else std.os.close;
 
         var addr: std.os.sockaddr_in6 = undefined;

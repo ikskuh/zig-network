@@ -1338,6 +1338,12 @@ const windows = struct {
                     else => |err| return unexpectedWSAError(err),
                 };
             }
+
+            if (std.io.is_async and std.event.Loop.instance != null) {
+                const loop = std.event.Loop.instance.?;
+                _ = try CreateIoCompletionPort(result, loop.os_data.io_port, undefined, undefined);
+            }
+
             return result;
         }
     }

@@ -1250,8 +1250,6 @@ const windows = struct {
 
             loop.beginOneEvent();
             suspend {
-                // TODO 7th arg (addrlen) should be a pointer, report wrong signature in a zig issue.
-                //      See https://github.com/ziglang/zig/pull/5477
                 _ = ws2_32.WSARecvFrom(
                     sock,
                     @ptrCast([*]const ws2_32.WSABUF, &wsa_buf),
@@ -1259,7 +1257,7 @@ const windows = struct {
                     null,
                     &lpFlags,
                     src_addr,
-                    @intCast(u32, @ptrToInt(addrlen)),
+                    addrlen,
                     @ptrCast(*ws2_32.WSAOVERLAPPED, &resume_node.base.overlapped),
                     null,
                 );

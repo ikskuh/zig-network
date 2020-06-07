@@ -246,6 +246,7 @@ pub const Socket = struct {
 
     family: AddressFamily,
     internal: NativeSocket,
+    endpoint: ?EndPoint,
 
     /// Spawns a new socket that must be freed with `close()`.
     /// `family` defines the socket family, `protocol` the protocol used.
@@ -255,6 +256,7 @@ pub const Socket = struct {
         return Self{
             .family = family,
             .internal = try socket_fn(family.toNativeAddressFamily(), protocol.toSocketType(), 0),
+            .endpoint = null,
         };
     }
 
@@ -291,7 +293,7 @@ pub const Socket = struct {
 
     /// Connects the UDP or TCP socket to a remote server.
     /// The `target` address type must fit the address type of the socket.
-    pub fn connect(self: Self, target: EndPoint) !void {
+    pub fn connect(self: *Self, target: EndPoint) !void {
         if (target.address != self.family)
             return error.AddressFamilyMismach;
 
@@ -300,6 +302,7 @@ pub const Socket = struct {
             .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
             .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
         }
+        self.endpoint = target;
     }
 
     /// Makes this socket a TCP server and allows others to connect to
@@ -326,6 +329,7 @@ pub const Socket = struct {
         return Socket{
             .family = try AddressFamily.fromNativeAddressFamily(addr_ptr.family),
             .internal = fd,
+            .endpoint = null,
         };
     }
 
@@ -333,6 +337,8 @@ pub const Socket = struct {
     /// will always send full packets, on TCP it will append
     /// to the stream.
     pub fn send(self: Self, data: []const u8) !usize {
+        if (self.endpoint) |ep|
+            return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
         return try send_fn(self.internal, data, 0);
     }
@@ -371,10 +377,10 @@ pub const Socket = struct {
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
 
-        switch (ep.toSocketAddress()) {
+        return switch (receiver.toSocketAddress()) {
             .ipv4 => |sockaddr| try sendto_fn(self.internal, data, 0, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
             .ipv6 => |sockaddr| try sendto_fn(self.internal, data, 0, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
-        }
+        };
     }
 
     /// Sets the socket option `SO_REUSEPORT` which allows
@@ -871,7 +877,7 @@ pub fn connectToHost(
     defer endpoint_list.deinit();
 
     for (endpoint_list.endpoints) |endpt| {
-        const sock = try Socket.create(@as(AddressFamily, endpt.address), protocol);
+        var sock = try Socket.create(@as(AddressFamily, endpt.address), protocol);
         sock.connect(endpt) catch {
             sock.close();
             continue;
@@ -1220,7 +1226,11 @@ const windows = struct {
         }
     }
 
-    fn send(sock: ws2_32.SOCKET, buf: []const u8, flags: u32) std.os.SendError!usize {
+    fn send(
+        sock: ws2_32.SOCKET,
+        buf: []const u8,
+        flags: u32,
+    ) std.os.SendError!usize {
         return sendto(sock, buf, flags, null, 0);
     }
 

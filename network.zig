@@ -340,7 +340,8 @@ pub const Socket = struct {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
-        return try send_fn(self.internal, data, 0);
+        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
+        return try send_fn(self.internal, data, flags);
     }
 
     /// Blockingly receives some data from the connected peer.
@@ -348,8 +349,9 @@ pub const Socket = struct {
     /// a UDP packet.
     pub fn receive(self: Self, data: []u8) !usize {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
+        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
 
-        return try recvfrom_fn(self.internal, data, 0, null, null);
+        return try recvfrom_fn(self.internal, data, flags, null, null);
     }
 
     const ReceiveFrom = struct { numberOfBytes: usize, sender: EndPoint };
@@ -358,13 +360,14 @@ pub const Socket = struct {
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
+        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
 
         // Use the ipv6 sockaddr to gurantee data will fit.
         var addr: std.os.sockaddr_in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
-        const len = try recvfrom_fn(self.internal, data, 0, addr_ptr, &size);
+        const len = try recvfrom_fn(self.internal, data, flags, addr_ptr, &size);
 
         return ReceiveFrom{
             .numberOfBytes = len,
@@ -376,10 +379,11 @@ pub const Socket = struct {
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
+        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
-            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, 0, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, 0, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
         };
     }
 

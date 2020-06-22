@@ -21,8 +21,8 @@ test "Connect to an echo server" {
     defer sock.close();
 
     const msg = "Hi from socket!\n";
-    try sock.outStream().writeAll(msg);
+    try sock.writer().writeAll(msg);
 
     var buf: [128]u8 = undefined;
-    std.debug.warn("Echo: {}", .{buf[0..try sock.inStream().readAll(buf[0..msg.len])]});
+    std.debug.warn("Echo: {}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
 }

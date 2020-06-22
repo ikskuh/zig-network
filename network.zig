@@ -230,18 +230,10 @@ pub const EndPoint = struct {
 /// A network socket, can receive and send data for TCP/UDP and accept
 /// incoming connections if bound as a TCP server.
 pub const Socket = struct {
-    pub const Error = error{
-        AccessDenied,
-        WouldBlock,
-        FastOpenAlreadyInProgress,
-        ConnectionResetByPeer,
-        MessageTooBig,
-        SystemResources,
-        BrokenPipe,
-        Unexpected,
-    };
-    const Self = @This();
+    pub const Reader = std.io.Reader(Socket, std.os.RecvFromError, receive);
+    pub const Writer = std.io.Writer(Socket, std.os.SendError, send);
 
+    const Self = @This();
     const NativeSocket = if (is_windows) windows.ws2_32.SOCKET else std.os.fd_t;
 
     family: AddressFamily,
@@ -451,15 +443,15 @@ pub const Socket = struct {
         try setsockopt_fn(self.internal, std.os.SOL_SOCKET, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
     }
 
-    /// Gets an input stream that allows reading data from the socket.
-    pub fn inStream(self: Self) std.io.InStream(Socket, std.os.RecvFromError, receive) {
+    /// Gets an reader that allows reading data from the socket.
+    pub fn reader(self: Self) Reader {
         return .{
             .context = self,
         };
     }
 
-    /// Gets an output stream that allows writing data to the socket.
-    pub fn outStream(self: Self) std.io.OutStream(Socket, Error, send) {
+    /// Gets a writer that allows writing data to the socket.
+    pub fn writer(self: Self) Writer {
         return .{
             .context = self,
         };

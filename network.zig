@@ -39,8 +39,8 @@ pub const Address = union(AddressFamily) {
             };
         }
 
-        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
-            try out_stream.print("{}.{}.{}.{}", .{
+        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
+            try writer.print("{}.{}.{}.{}", .{
                 value.value[0],
                 value.value[1],
                 value.value[2],
@@ -62,9 +62,9 @@ pub const Address = union(AddressFamily) {
             return Self{ .value = value, .scope_id = scope_id };
         }
 
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
+        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
             if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
-                try std.fmt.format(out_stream, "[::ffff:{}.{}.{}.{}]", .{
+                try std.fmt.format(writer, "[::ffff:{}.{}.{}.{}]", .{
                     self.value[12],
                     self.value[13],
                     self.value[14],
@@ -83,30 +83,30 @@ pub const Address = union(AddressFamily) {
                     break :blk buf;
                 },
             };
-            try out_stream.writeAll("[");
+            try writer.writeAll("[");
             var i: usize = 0;
             var abbrv = false;
             while (i < native_endian_parts.len) : (i += 1) {
                 if (native_endian_parts[i] == 0) {
                     if (!abbrv) {
-                        try out_stream.writeAll(if (i == 0) "::" else ":");
+                        try writer.writeAll(if (i == 0) "::" else ":");
                         abbrv = true;
                     }
                     continue;
                 }
-                try std.fmt.format(out_stream, "{x}", .{native_endian_parts[i]});
+                try std.fmt.format(writer, "{x}", .{native_endian_parts[i]});
                 if (i != native_endian_parts.len - 1) {
-                    try out_stream.writeAll(":");
+                    try writer.writeAll(":");
                 }
             }
-            try out_stream.writeAll("]");
+            try writer.writeAll("]");
         }
     };
 
-    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
+    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
         switch (value) {
-            .ipv4 => |a| try a.format(fmt, options, out_stream),
-            .ipv6 => |a| try a.format(fmt, options, out_stream),
+            .ipv4 => |a| try a.format(fmt, options, writer),
+            .ipv6 => |a| try a.format(fmt, options, writer),
         }
     }
 };
@@ -155,8 +155,8 @@ pub const EndPoint = struct {
     address: Address,
     port: u16,
 
-    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, out_stream: var) !void {
-        try out_stream.print("{}:{}", .{
+    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
+        try writer.print("{}:{}", .{
             value.address,
             value.port,
         });

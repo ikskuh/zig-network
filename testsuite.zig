@@ -9,7 +9,7 @@ test "Get endpoint list" {
     defer endpoint_list.deinit();
 
     for (endpoint_list.endpoints) |endpt| {
-        std.debug.warn("{}\n", .{endpt});
+        std.debug.print("{}\n", .{endpt});
     }
 }
 
@@ -24,5 +24,5 @@ test "Connect to an echo server" {
     try sock.writer().writeAll(msg);
 
     var buf: [128]u8 = undefined;
-    std.debug.warn("Echo: {}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
+    std.debug.print("Echo: {}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
 }

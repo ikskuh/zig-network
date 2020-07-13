@@ -39,7 +39,7 @@ pub const Address = union(AddressFamily) {
             };
         }
 
-        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
+        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
             try writer.print("{}.{}.{}.{}", .{
                 value.value[0],
                 value.value[1],
@@ -62,7 +62,7 @@ pub const Address = union(AddressFamily) {
             return Self{ .value = value, .scope_id = scope_id };
         }
 
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
+        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
             if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
                 try std.fmt.format(writer, "[::ffff:{}.{}.{}.{}]", .{
                     self.value[12],
@@ -103,7 +103,7 @@ pub const Address = union(AddressFamily) {
         }
     };
 
-    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
+    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         switch (value) {
             .ipv4 => |a| try a.format(fmt, options, writer),
             .ipv6 => |a| try a.format(fmt, options, writer),
@@ -155,7 +155,7 @@ pub const EndPoint = struct {
     address: Address,
     port: u16,
 
-    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: var) !void {
+    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         try writer.print("{}:{}", .{
             value.address,
             value.port,
@@ -542,7 +542,7 @@ const LinuxOSLogic = struct {
 
     fds: std.ArrayList(std.os.pollfd),
 
-    inline fn init(allocator: *std.mem.Allocator) Self {
+    inline fn init(allocator: *std.mem.Allocator) !Self {
         return Self{
             .fds = std.ArrayList(std.os.pollfd).init(allocator),
         };
@@ -837,7 +837,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
         },
         .linux => return try std.os.poll(
             set.internal.fds.items,
-            if (timeout) |val| @intCast(i32, (val + std.time.millisecond - 1) / std.time.millisecond) else -1,
+            if (timeout) |val| @intCast(i32, (val + std.time.ms_per_s - 1) / std.time.ms_per_s) else -1,
         ),
         else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
     }

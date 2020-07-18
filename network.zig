@@ -39,6 +39,10 @@ pub const Address = union(AddressFamily) {
             };
         }
 
+        pub fn eql(lhs: Self, rhs: Self) bool {
+            return std.mem.eql(u8, &lhs.value, &rhs.value);
+        }
+
         pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
             try writer.print("{}.{}.{}.{}", .{
                 value.value[0],
@@ -60,6 +64,11 @@ pub const Address = union(AddressFamily) {
 
         pub fn init(value: [16]u8, scope_id: u32) Self {
             return Self{ .value = value, .scope_id = scope_id };
+        }
+
+        pub fn eql(lhs: Self, rhs: Self) bool {
+            return std.mem.eql(u8, &lhs.value, &rhs.value) and
+                lhs.scope_id == rhs.scope_id;
         }
 
         pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -108,6 +117,15 @@ pub const Address = union(AddressFamily) {
             .ipv4 => |a| try a.format(fmt, options, writer),
             .ipv6 => |a| try a.format(fmt, options, writer),
         }
+    }
+
+    pub fn eql(lhs: @This(), rhs: @This()) bool {
+        if (@as(AddressFamily, lhs) != @as(AddressFamily, rhs))
+            return false;
+        return switch (lhs) {
+            .ipv4 => |l| l.eql(rhs.ipv4),
+            .ipv6 => |l| l.eql(rhs.ipv6),
+        };
     }
 };
 
@@ -837,7 +855,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
         },
         .linux => return try std.os.poll(
             set.internal.fds.items,
-            if (timeout) |val| @intCast(i32, (val + std.time.ms_per_s - 1) / std.time.ms_per_s) else -1,
+            if (timeout) |val| @intCast(i32, (val + std.time.ns_per_s - 1) / std.time.ns_per_s) else -1,
         ),
         else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
     }

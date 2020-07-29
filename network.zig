@@ -868,7 +868,7 @@ const GetPeerNameError = error{
 } || std.os.UnexpectedError;
 
 fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) GetPeerNameError!void {
-    switch (std.os.errno(std.os.system.getsockname(sockfd, addr, addrlen))) {
+    switch (std.os.errno(std.os.system.getpeername(sockfd, addr, addrlen))) {
         0 => return,
         else => |err| return std.os.unexpectedErrno(err),
 

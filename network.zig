@@ -6,7 +6,7 @@ comptime {
 }
 
 const is_windows = std.builtin.os.tag == .windows;
-const is_mac = std.builtin.os.tag == .macosx;
+const is_mac = std.builtin.os.tag.isDarwin();
 
 pub fn init() error{InitializationError}!void {
     if (is_windows) {

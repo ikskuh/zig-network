@@ -6,6 +6,7 @@ comptime {
 }
 
 const is_windows = std.builtin.os.tag == .windows;
+const is_mac = std.builtin.os.tag == .macosx;
 
 pub fn init() error{InitializationError}!void {
     if (is_windows) {
@@ -306,6 +307,14 @@ pub const Socket = struct {
     pub fn connect(self: *Self, target: EndPoint) !void {
         if (target.address != self.family)
             return error.AddressFamilyMismach;
+        
+        // on OSX you set the NOSIGNAl once, rather than for each message
+        if(is_mac) {
+            // set the options to ON
+            const value: u32 = 1;
+            const SO_NOSIGPIPE = 0x00000800;
+            try std.os.setsockopt(self.internal, std.os.SOL_SOCKET, SO_NOSIGPIPE, std.mem.asBytes(&value));
+        }
 
         const connect_fn = if (is_windows) windows.connect else std.os.connect;
         switch (target.toSocketAddress()) {
@@ -350,7 +359,7 @@ pub const Socket = struct {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
-        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
         return try send_fn(self.internal, data, flags);
     }
 
@@ -359,7 +368,7 @@ pub const Socket = struct {
     /// a UDP packet.
     pub fn receive(self: Self, data: []u8) !usize {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
 
         return try recvfrom_fn(self.internal, data, flags, null, null);
     }
@@ -370,7 +379,7 @@ pub const Socket = struct {
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
 
         // Use the ipv6 sockaddr to gurantee data will fit.
         var addr: std.os.sockaddr_in6 align(4) = undefined;
@@ -389,7 +398,7 @@ pub const Socket = struct {
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
-        const flags = if (is_windows) 0 else std.os.MSG_NOSIGNAL;
+        const flags =  if(is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
             .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),

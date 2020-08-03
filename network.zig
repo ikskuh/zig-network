@@ -349,8 +349,13 @@ pub const Socket = struct {
         var addr: std.os.sockaddr_in6 = undefined;
         var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
+        const flags = if (is_windows)
+            0
+        else
+            std.os.O_NONBLOCK;
+
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
-        const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, 0);
+        const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
         errdefer close_fn(fd);
 
         return Socket{

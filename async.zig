@@ -39,6 +39,8 @@ const Client = struct {
         while (true) {
             var buf: [100]u8 = undefined;
             const amt = try self.conn.receive(&buf);
+            if (amt == 0)
+                break; // We're done, end of connection
             const msg = buf[0..amt];
             std.debug.print("Client wrote: {}", .{msg});
         }

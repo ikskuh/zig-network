@@ -7,6 +7,7 @@ comptime {
 
 const is_windows = std.builtin.os.tag == .windows;
 const is_darwin = std.builtin.os.tag.isDarwin();
+const is_linux = std.builtin.os.tag == .linux;
 
 pub fn init() error{InitializationError}!void {
     if (is_windows) {
@@ -266,7 +267,7 @@ pub const Socket = struct {
 
         // std provides a shim for Darwin to set SOCK_NONBLOCK.
         // Socket creation will only set the flag if we provide the shim rather than the actual flag.
-        const socket_type = if(is_darwin and std.io.is_async)
+        const socket_type = if ((is_darwin or is_linux) and std.io.is_async)
             protocol.toSocketType() | std.os.SOCK_NONBLOCK
         else
             protocol.toSocketType();
@@ -314,9 +315,9 @@ pub const Socket = struct {
     pub fn connect(self: *Self, target: EndPoint) !void {
         if (target.address != self.family)
             return error.AddressFamilyMismach;
-        
+
         // on OSX you set the NOSIGNAl once, rather than for each message
-        if(is_mac) {
+        if (is_mac) {
             // set the options to ON
             const value: u32 = 1;
             const SO_NOSIGPIPE = 0x00000800;

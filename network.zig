@@ -6,7 +6,7 @@ comptime {
 }
 
 const is_windows = std.builtin.os.tag == .windows;
-const is_mac = std.builtin.os.tag.isDarwin();
+const is_darwin = std.builtin.os.tag.isDarwin();
 
 pub fn init() error{InitializationError}!void {
     if (is_windows) {
@@ -264,9 +264,16 @@ pub const Socket = struct {
     pub fn create(family: AddressFamily, protocol: Protocol) !Self {
         const socket_fn = if (is_windows) windows.socket else std.os.socket;
 
+        // std provides a shim for Darwin to set SOCK_NONBLOCK.
+        // Socket creation will only set the flag if we provide the shim rather than the actual flag.
+        const socket_type = if(is_darwin and std.io.is_async)
+            protocol.toSocketType() | std.os.SOCK_NONBLOCK
+        else
+            protocol.toSocketType();
+
         return Self{
             .family = family,
-            .internal = try socket_fn(family.toNativeAddressFamily(), protocol.toSocketType(), 0),
+            .internal = try socket_fn(family.toNativeAddressFamily(), socket_type, 0),
             .endpoint = null,
         };
     }
@@ -359,7 +366,7 @@ pub const Socket = struct {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
-        const flags = if (is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
         return try send_fn(self.internal, data, flags);
     }
 
@@ -368,8 +375,7 @@ pub const Socket = struct {
     /// a UDP packet.
     pub fn receive(self: Self, data: []u8) !usize {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
-
+        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
         return try recvfrom_fn(self.internal, data, flags, null, null);
     }
 
@@ -379,7 +385,7 @@ pub const Socket = struct {
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
 
         // Use the ipv6 sockaddr to gurantee data will fit.
         var addr: std.os.sockaddr_in6 align(4) = undefined;
@@ -398,7 +404,7 @@ pub const Socket = struct {
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
-        const flags =  if(is_windows or is_mac) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
             .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
@@ -558,6 +564,7 @@ pub const SocketSet = struct {
 const OSLogic = switch (std.builtin.os.tag) {
     .windows => WindowsOSLogic,
     .linux => LinuxOSLogic,
+    .macosx, .ios, .watchos, .tvos => DarwinOsLogic,
     else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
 };
 
@@ -643,6 +650,9 @@ const LinuxOSLogic = struct {
         return self.checkMaskAnyBit(sock, std.os.POLLERR);
     }
 };
+
+/// Alias to LinuxOSLogic as the logic between the two are shared and both support poll()
+const DarwinOsLogic = LinuxOSLogic;
 
 // On windows, we use select()
 const WindowsOSLogic = struct {
@@ -862,7 +872,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             // Windows ignores first argument.
             return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
         },
-        .linux => return try std.os.poll(
+        .linux, .macosx, .ios, .watchos, .tvos => return try std.os.poll(
             set.internal.fds.items,
             if (timeout) |val| @intCast(i32, (val + std.time.ns_per_s - 1) / std.time.ns_per_s) else -1,
         ),

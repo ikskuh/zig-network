@@ -268,7 +268,7 @@ pub const Socket = struct {
         // std provides a shim for Darwin to set SOCK_NONBLOCK.
         // Socket creation will only set the flag if we provide the shim rather than the actual flag.
         const socket_type = if ((is_darwin or is_linux) and std.io.is_async)
-            protocol.toSocketType() | std.os.SOCK_NONBLOCK
+            protocol.toSocketType() | std.os.SOCK_NONBLOCK | std.os.SOCK_CLOEXEC
         else
             protocol.toSocketType();
 
@@ -316,8 +316,8 @@ pub const Socket = struct {
         if (target.address != self.family)
             return error.AddressFamilyMismach;
 
-        // on OSX you set the NOSIGNAl once, rather than for each message
-        if (is_mac) {
+        // on darwin you set the NOSIGNAl once, rather than for each message
+        if (is_darwin) {
             // set the options to ON
             const value: u32 = 1;
             const SO_NOSIGPIPE = 0x00000800;
@@ -349,7 +349,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr_in6 = undefined;
         var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
-        const flags = if (is_windows)
+        const flags = if (is_windows or is_darwin)
             0
         else
             std.os.O_NONBLOCK;

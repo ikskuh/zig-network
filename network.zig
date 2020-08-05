@@ -1049,10 +1049,10 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         for (address_list.addrs) |net_addr| {
             const addr: Address = switch (net_addr.any.family) {
                 std.os.AF_INET => block: {
-                    const bytes = @ptrCast(*const [4]u8, &net_addr.in.addr);
+                    const bytes = @ptrCast(*const [4]u8, &net_addr.in.sa.addr);
                     break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                 },
-                std.os.AF_INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.addr, net_addr.in6.scope_id) },
+                std.os.AF_INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.sa.addr, net_addr.in6.sa.scope_id) },
                 else => unreachable,
             };
 

@@ -709,7 +709,7 @@ const WindowsOSLogic = struct {
             if (fd_set.*.size == fd_set.*.capacity) {
                 // Double our capacity.
                 const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
-                fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.reallocAdvanced(u8, fd_set.*.memSlice(), 8, new_mem_size)).ptr);
+                fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.reallocAdvanced(u8, fd_set.*.memSlice(), 8, new_mem_size, .exact)).ptr);
                 fd_set.*.capacity *= 2;
             }
 

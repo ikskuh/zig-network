@@ -351,8 +351,7 @@ pub const Socket = struct {
 
         const flags = if (is_windows or is_darwin)
             0
-        else
-            std.os.O_NONBLOCK;
+        else if (std.io.is_async) std.os.O_NONBLOCK else 0;
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);

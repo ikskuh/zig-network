@@ -10,6 +10,9 @@ const network = @import("network");
 const buffer_size = 1000;
 
 pub fn main() !void {
+    try network.init();
+    defer network.deinit();
+
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
@@ -51,7 +54,7 @@ pub fn main() !void {
 
 fn runEchoClient(client: network.Socket) !void {
     while (true) {
-        var buffer: [buffer_siz]u8 = undefined;
+        var buffer: [buffer_size]u8 = undefined;
 
         const len = try client.receive(&buffer);
         if (len == 0)

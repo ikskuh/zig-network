@@ -1168,7 +1168,7 @@ const windows = struct {
 
     // @TODO Make this, listen, accept, bind etc (all but recv and sendto) asynchronous
     fn connect(sock: ws2_32.SOCKET, sock_addr: *const std.os.sockaddr, len: std.os.socklen_t) std.os.ConnectError!void {
-        while (true) if (ws2_32.connect(sock, sock_addr, len) != 0) {
+        while (true) if (ws2_32.connect(sock, sock_addr, @intCast(c_int, len)) != 0) {
             return switch (ws2_32.WSAGetLastError()) {
                 .WSAEACCES => error.PermissionDenied,
                 .WSAEADDRINUSE => error.AddressInUse,
@@ -1236,7 +1236,7 @@ const windows = struct {
                     null,
                     @intCast(DWORD, flags),
                     dest_addr,
-                    addrlen,
+                    @intCast(c_int, addrlen),
                     @ptrCast(*ws2_32.WSAOVERLAPPED, &resume_node.base.overlapped),
                     null,
                 );

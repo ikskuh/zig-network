@@ -1104,7 +1104,17 @@ fn libc_getaddrinfo(
 }
 
 const windows = struct {
-    usingnamespace std.os.windows;
+    pub const CreateIoCompletionPort = std.os.windows.CreateIoCompletionPort;
+    pub const DWORD = std.os.windows.DWORD;
+    pub const FALSE = std.os.windows.FALSE;
+    pub const kernel32 = std.os.windows.kernel32;
+    pub const ULONG = std.os.windows.ULONG;
+    pub const unexpectedError = std.os.windows.unexpectedError;
+    pub const unexpectedWSAError = std.os.windows.unexpectedWSAError;
+    pub const ws2_32 = std.os.windows.ws2_32;
+    pub const WSACleanup = std.os.windows.WSACleanup;
+    pub const WSASocketW = std.os.windows.WSASocketW;
+    pub const WSAStartup = std.os.windows.WSAStartup;
 
     const timeval = extern struct {
         tv_sec: c_long,

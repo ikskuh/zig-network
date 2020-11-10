@@ -1,9 +1,9 @@
 const std = @import("std");
-const network = @import("network.zig");
+const network = @import("network");
 
 pub const io_mode = .evented;
 
-pub fn main() anyerror!void {
+pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
     try network.init();

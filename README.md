@@ -26,7 +26,7 @@ test "Connect to an echo server" {
 }
 ```
 
-See [async.zig](async.zig) for a more complete example on how to use asynchronous I/O to make a small TCP server.
+See [async.zig](examples/async.zig) for a more complete example on how to use asynchronous I/O to make a small TCP server.
 
 ## Notes
 On Windows receive and send function calls are asynchronous and cooperate with the standard library event loop

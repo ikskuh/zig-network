@@ -351,8 +351,7 @@ pub const Socket = struct {
 
         const flags = if (is_windows or is_darwin)
             0
-        else
-            std.os.O_NONBLOCK;
+        else if (std.io.is_async) std.os.O_NONBLOCK else 0;
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
@@ -1105,7 +1104,17 @@ fn libc_getaddrinfo(
 }
 
 const windows = struct {
-    usingnamespace std.os.windows;
+    pub const CreateIoCompletionPort = std.os.windows.CreateIoCompletionPort;
+    pub const DWORD = std.os.windows.DWORD;
+    pub const FALSE = std.os.windows.FALSE;
+    pub const kernel32 = std.os.windows.kernel32;
+    pub const ULONG = std.os.windows.ULONG;
+    pub const unexpectedError = std.os.windows.unexpectedError;
+    pub const unexpectedWSAError = std.os.windows.unexpectedWSAError;
+    pub const ws2_32 = std.os.windows.ws2_32;
+    pub const WSACleanup = std.os.windows.WSACleanup;
+    pub const WSASocketW = std.os.windows.WSASocketW;
+    pub const WSAStartup = std.os.windows.WSAStartup;
 
     const timeval = extern struct {
         tv_sec: c_long,
@@ -1159,7 +1168,7 @@ const windows = struct {
 
     // @TODO Make this, listen, accept, bind etc (all but recv and sendto) asynchronous
     fn connect(sock: ws2_32.SOCKET, sock_addr: *const std.os.sockaddr, len: std.os.socklen_t) std.os.ConnectError!void {
-        while (true) if (ws2_32.connect(sock, sock_addr, len) != 0) {
+        while (true) if (ws2_32.connect(sock, sock_addr, @intCast(c_int, len)) != 0) {
             return switch (ws2_32.WSAGetLastError()) {
                 .WSAEACCES => error.PermissionDenied,
                 .WSAEADDRINUSE => error.AddressInUse,
@@ -1227,7 +1236,7 @@ const windows = struct {
                     null,
                     @intCast(DWORD, flags),
                     dest_addr,
-                    addrlen,
+                    @intCast(c_int, addrlen),
                     @ptrCast(*ws2_32.WSAOVERLAPPED, &resume_node.base.overlapped),
                     null,
                 );

@@ -5,6 +5,8 @@ on:
     branches: [ master ]
   pull_request:
     branches: [ master ]
+  schedule:
+    - cron: '0 5 * * *' # run at 5 AM UTC, continous integration against master branch
 
 jobs:
   build:
@@ -23,10 +25,6 @@ jobs:
       with:
         version: master
     
-    - name: Run testsuite
+    - name: Compile everything
       run: |
-        zig test testsuite.zig
-  
-    - name: Build async example
-      run: |
-        zig build-exe async.zig
+        zig build examples test install

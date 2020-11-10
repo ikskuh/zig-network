@@ -569,7 +569,7 @@ pub const SocketSet = struct {
 const OSLogic = switch (std.builtin.os.tag) {
     .windows => WindowsOSLogic,
     .linux => LinuxOSLogic,
-    .macosx, .ios, .watchos, .tvos => DarwinOsLogic,
+    .macos, .ios, .watchos, .tvos => DarwinOsLogic,
     else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
 };
 
@@ -877,7 +877,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             // Windows ignores first argument.
             return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
         },
-        .linux, .macosx, .ios, .watchos, .tvos => return try std.os.poll(
+        .linux, .macos, .ios, .watchos, .tvos => return try std.os.poll(
             set.internal.fds.items,
             if (timeout) |val| @intCast(i32, (val + std.time.ns_per_s - 1) / std.time.ns_per_s) else -1,
         ),

@@ -2,29 +2,29 @@ name: CI
 
 on:
   push:
-    branches: [ master ]
+    branches: [master]
   pull_request:
-    branches: [ master ]
+    branches: [master]
   schedule:
-    - cron: '0 5 * * *' # run at 5 AM UTC, continous integration against master branch
+    - cron: "0 5 * * *" # run at 5 AM UTC, continous integration against master branch
 
 jobs:
   build:
-
     strategy:
+      fail-fast: false
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
 
     steps:
-    # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-    - uses: actions/checkout@v2
+      # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
+      - uses: actions/checkout@v2
 
-    - name: Setup Zig
-      uses: goto-bus-stop/setup-zig@v1
-      with:
-        version: master
-    
-    - name: Compile everything
-      run: |
-        zig build examples test install
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: master
+
+      - name: Compile everything
+        run: |
+          zig build examples test install

@@ -250,8 +250,11 @@ pub const EndPoint = struct {
 /// A network socket, can receive and send data for TCP/UDP and accept
 /// incoming connections if bound as a TCP server.
 pub const Socket = struct {
-    pub const Reader = std.io.Reader(Socket, std.os.RecvFromError, receive);
-    pub const Writer = std.io.Writer(Socket, std.os.SendError, send);
+    pub const SendError = (std.os.SendError || std.os.SendToError);
+    pub const ReceiveError = std.os.RecvFromError;
+
+    pub const Reader = std.io.Reader(Socket, ReceiveError, receive);
+    pub const Writer = std.io.Writer(Socket, SendError, send);
 
     const Self = @This();
     const NativeSocket = if (is_windows) windows.ws2_32.SOCKET else std.os.fd_t;
@@ -367,7 +370,7 @@ pub const Socket = struct {
     /// Send some data to the connected peer. In UDP, this
     /// will always send full packets, on TCP it will append
     /// to the stream.
-    pub fn send(self: Self, data: []const u8) !usize {
+    pub fn send(self: Self, data: []const u8) SendError!usize {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
@@ -407,7 +410,7 @@ pub const Socket = struct {
 
     /// Sends a packet to a given network end point. Behaves the same as `send()`, but will only work for
     /// for UDP sockets.
-    pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) !usize {
+    pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) SendError!usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
         const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
 
@@ -483,16 +486,12 @@ pub const Socket = struct {
 
     /// Gets an reader that allows reading data from the socket.
     pub fn reader(self: Self) Reader {
-        return .{
-            .context = self,
-        };
+        return .{ .context = self };
     }
 
     /// Gets a writer that allows writing data to the socket.
     pub fn writer(self: Self) Writer {
-        return .{
-            .context = self,
-        };
+        return .{ .context = self };
     }
 };
 
@@ -1205,7 +1204,7 @@ const windows = struct {
         flags: u32,
         dest_addr: ?*const std.os.sockaddr,
         addrlen: std.os.socklen_t,
-    ) std.os.SendError!usize {
+    ) Socket.SendError!usize {
         if (std.io.is_async and std.event.Loop.instance != null) {
             const loop = std.event.Loop.instance.?;
 
@@ -1278,7 +1277,7 @@ const windows = struct {
         sock: ws2_32.SOCKET,
         buf: []const u8,
         flags: u32,
-    ) std.os.SendError!usize {
+    ) Socket.SendError!usize {
         return sendto(sock, buf, flags, null, 0);
     }
 

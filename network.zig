@@ -591,7 +591,7 @@ const LinuxOSLogic = struct {
     }
 
     inline fn clear(self: *Self) void {
-        self.fds.shrink(0);
+        self.fds.shrinkRetainingCapacity(0);
     }
 
     inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {

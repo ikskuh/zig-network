@@ -890,8 +890,14 @@ const GetPeerNameError = error{
     NotConnected,
 } || std.os.UnexpectedError;
 
+const MissingCApi = struct {
+    extern "c" fn getpeername(sockfd: std.os.fd_t, noalias addr: *std.os.sockaddr, noalias addrlen: *std.os.socklen_t) c_int;
+};
+
 fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.socklen_t) GetPeerNameError!void {
-    switch (std.os.errno(std.os.system.getpeername(sockfd, addr, addrlen))) {
+    const getpeername_fix = if (std.os.system == std.c) MissingCApi.getpeername else std.os.system.getpeername;
+
+    switch (std.os.errno(getpeername_fix(sockfd, addr, addrlen))) {
         0 => return,
         else => |err| return std.os.unexpectedErrno(err),
 

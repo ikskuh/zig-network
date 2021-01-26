@@ -8,6 +8,14 @@ comptime {
 const is_windows = std.builtin.os.tag == .windows;
 const is_darwin = std.builtin.os.tag.isDarwin();
 const is_linux = std.builtin.os.tag == .linux;
+const is_freebsd = std.builtin.os.tag == .freebsd;
+const is_openbsd = std.builtin.os.tag == .openbsd;
+const is_netbsd = std.builtin.os.tag == .netbsd;
+const is_dragonfly = std.builtin.os.tag == .dragonfly;
+
+// use these to test collections of OS type
+const is_bsd = is_darwin or is_freebsd or is_openbsd or is_netbsd or is_dragonfly;
+const is_unix = is_bsd or is_linux;
 
 pub fn init() error{InitializationError}!void {
     if (is_windows) {
@@ -270,7 +278,7 @@ pub const Socket = struct {
 
         // std provides a shim for Darwin to set SOCK_NONBLOCK.
         // Socket creation will only set the flag if we provide the shim rather than the actual flag.
-        const socket_type = if ((is_darwin or is_linux) and std.io.is_async)
+        const socket_type = if (is_unix and std.io.is_async)
             protocol.toSocketType() | std.os.SOCK_NONBLOCK | std.os.SOCK_CLOEXEC
         else
             protocol.toSocketType();
@@ -320,7 +328,7 @@ pub const Socket = struct {
             return error.AddressFamilyMismach;
 
         // on darwin you set the NOSIGNAl once, rather than for each message
-        if (is_darwin) {
+        if (is_bsd) {
             // set the options to ON
             const value: u32 = 1;
             const SO_NOSIGPIPE = 0x00000800;
@@ -352,7 +360,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr_in6 = undefined;
         var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
 
-        const flags = if (is_windows or is_darwin)
+        const flags = if (is_windows or is_bsd)
             0
         else if (std.io.is_async) std.os.O_NONBLOCK else 0;
 
@@ -374,7 +382,7 @@ pub const Socket = struct {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
-        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
         return try send_fn(self.internal, data, flags);
     }
 
@@ -383,7 +391,7 @@ pub const Socket = struct {
     /// a UDP packet.
     pub fn receive(self: Self, data: []u8) !usize {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
         return try recvfrom_fn(self.internal, data, flags, null, null);
     }
 
@@ -393,7 +401,7 @@ pub const Socket = struct {
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
 
         // Use the ipv6 sockaddr to gurantee data will fit.
         var addr: std.os.sockaddr_in6 align(4) = undefined;
@@ -412,7 +420,7 @@ pub const Socket = struct {
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) SendError!usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
-        const flags = if (is_windows or is_darwin) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
             .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),

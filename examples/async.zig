@@ -42,7 +42,7 @@ const Client = struct {
             if (amt == 0)
                 break; // We're done, end of connection
             const msg = buf[0..amt];
-            std.debug.print("Client wrote: {}", .{msg});
+            std.debug.print("Client wrote: {s}", .{msg});
         }
     }
 };

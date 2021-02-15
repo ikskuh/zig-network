@@ -43,7 +43,7 @@ pub fn main() !void {
         });
 
         runEchoClient(client) catch |err| {
-            std.debug.print("Client disconnected with msg {}.\n", .{
+            std.debug.print("Client disconnected with msg {s}.\n", .{
                 @errorName(err),
             });
             continue;

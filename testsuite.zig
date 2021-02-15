@@ -24,5 +24,5 @@ test "Connect to an echo server" {
     try sock.writer().writeAll(msg);
 
     var buf: [128]u8 = undefined;
-    std.debug.print("Echo: {}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
+    std.debug.print("Echo: {s}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
 }

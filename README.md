@@ -28,6 +28,23 @@ test "Connect to an echo server" {
 
 See [async.zig](examples/async.zig) for a more complete example on how to use asynchronous I/O to make a small TCP server.
 
+## Run examples
+
+```bash
+$ zig build examples
+$ ./zig-cache/bin/echo 3000
+```
+
+in another terminal
+
+```bash
+$ nc locahost 3000
+hello
+hello
+how are you
+how are you
+```
+
 ## Notes
 On Windows receive and send function calls are asynchronous and cooperate with the standard library event loop
 when `io_mode = .evented` is set in the root file of your program.  

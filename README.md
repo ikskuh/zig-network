@@ -38,7 +38,7 @@ $ ./zig-cache/bin/echo 3000
 in another terminal
 
 ```bash
-$ nc locahost 3000
+$ nc localhost 3000
 hello
 hello
 how are you

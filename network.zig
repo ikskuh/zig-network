@@ -365,7 +365,15 @@ pub const Socket = struct {
         else if (std.io.is_async) std.os.O_NONBLOCK else 0;
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
-        const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
+
+        const fd = blk: {
+            if (std.io.is_async) {
+                const loop = std.event.Loop.instance orelse return error.UnexpectedError;
+                break :blk try loop.accept(self.internal, addr_ptr, &addr_size, flags);
+            } else {
+                break :blk try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
+            }
+        };
         errdefer close_fn(fd);
 
         return Socket{

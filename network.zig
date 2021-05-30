@@ -92,7 +92,7 @@ pub const Address = union(AddressFamily) {
                 return;
             }
             const big_endian_parts = @ptrCast(*align(1) const [8]u16, &self.value);
-            const native_endian_parts = switch (std.builtin.endian) {
+            const native_endian_parts = switch (std.Target.current.cpu.arch.endian()) {
                 .Big => big_endian_parts.*,
                 .Little => blk: {
                     var buf: [8]u16 = undefined;
@@ -588,21 +588,21 @@ const LinuxOSLogic = struct {
 
     fds: std.ArrayList(std.os.pollfd),
 
-    fn init(allocator: *std.mem.Allocator) callconv(.Inline) !Self {
+    inline fn init(allocator: *std.mem.Allocator) !Self {
         return Self{
             .fds = std.ArrayList(std.os.pollfd).init(allocator),
         };
     }
 
-    fn deinit(self: Self) callconv(.Inline) void {
+    inline fn deinit(self: Self) void {
         self.fds.deinit();
     }
 
-    fn clear(self: *Self) callconv(.Inline) void {
+    inline fn clear(self: *Self) void {
         self.fds.shrinkRetainingCapacity(0);
     }
 
-    fn add(self: *Self, sock: Socket, events: SocketEvent) callconv(.Inline) !void {
+    inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
         // Always poll for errors as this is done anyways
         var mask: i16 = std.os.POLLERR;
 
@@ -625,7 +625,7 @@ const LinuxOSLogic = struct {
         });
     }
 
-    fn remove(self: *Self, sock: Socket) callconv(.Inline) void {
+    inline fn remove(self: *Self, sock: Socket) void {
         const index = for (self.fds.items) |item, i| {
             if (item.fd == sock.internal)
                 break i;
@@ -636,7 +636,7 @@ const LinuxOSLogic = struct {
         }
     }
 
-    fn checkMaskAnyBit(self: Self, sock: Socket, mask: i16) callconv(.Inline) bool {
+    inline fn checkMaskAnyBit(self: Self, sock: Socket, mask: i16) bool {
         for (self.fds.items) |item| {
             if (item.fd != sock.internal)
                 continue;
@@ -650,15 +650,15 @@ const LinuxOSLogic = struct {
         return false;
     }
 
-    fn isReadyRead(self: Self, sock: Socket) callconv(.Inline) bool {
+    inline fn isReadyRead(self: Self, sock: Socket) bool {
         return self.checkMaskAnyBit(sock, std.os.POLLIN);
     }
 
-    fn isReadyWrite(self: Self, sock: Socket) callconv(.Inline) bool {
+    inline fn isReadyWrite(self: Self, sock: Socket) bool {
         return self.checkMaskAnyBit(sock, std.os.POLLOUT);
     }
 
-    fn isFaulted(self: Self, sock: Socket) callconv(.Inline) bool {
+    inline fn isFaulted(self: Self, sock: Socket) bool {
         return self.checkMaskAnyBit(sock, std.os.POLLERR);
     }
 };
@@ -740,7 +740,7 @@ const WindowsOSLogic = struct {
     write_fd_set: *align(8) FdSet,
     except_fd_set: *align(8) FdSet,
 
-    fn init(allocator: *std.mem.Allocator) callconv(.Inline) !Self {
+    inline fn init(allocator: *std.mem.Allocator) !Self {
         // TODO: https://github.com/ziglang/zig/issues/5391
         var read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
         var write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
@@ -757,7 +757,7 @@ const WindowsOSLogic = struct {
         };
     }
 
-    fn deinit(self: *Self) callconv(.Inline) void {
+    inline fn deinit(self: *Self) void {
         self.read_fds.deinit(self.allocator);
         self.write_fds.deinit(self.allocator);
 
@@ -766,7 +766,7 @@ const WindowsOSLogic = struct {
         self.except_fd_set.deinit(self.allocator);
     }
 
-    fn clear(self: *Self) callconv(.Inline) void {
+    inline fn clear(self: *Self) void {
         self.read_fds.shrink(0);
         self.write_fds.shrink(0);
 
@@ -775,7 +775,7 @@ const WindowsOSLogic = struct {
         self.except_fd_set.clear();
     }
 
-    fn add(self: *Self, sock: Socket, events: SocketEvent) callconv(.Inline) !void {
+    inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
         if (events.read) read_block: {
             for (self.read_fds.items) |fd| {
                 if (fd == sock.internal) break :read_block;
@@ -790,7 +790,7 @@ const WindowsOSLogic = struct {
         }
     }
 
-    fn remove(self: *Self, sock: Socket) callconv(.Inline) void {
+    inline fn remove(self: *Self, sock: Socket) void {
         for (self.read_fds.items) |fd, idx| {
             if (fd == sock.internal) {
                 _ = self.read_fds.swapRemove(idx);
@@ -811,7 +811,7 @@ const WindowsOSLogic = struct {
         except,
     };
 
-    fn getFdSet(self: *Self, comptime set_selection: Set) callconv(.Inline) !?[*]u8 {
+    inline fn getFdSet(self: *Self, comptime set_selection: Set) !?[*]u8 {
         const set_ptr = switch (set_selection) {
             .read => &self.read_fd_set,
             .write => &self.write_fd_set,
@@ -838,21 +838,21 @@ const WindowsOSLogic = struct {
         return set_ptr.*.getSelectPointer();
     }
 
-    fn isReadyRead(self: Self, sock: Socket) callconv(.Inline) bool {
+    inline fn isReadyRead(self: Self, sock: Socket) bool {
         if (self.read_fd_set.getSelectPointer()) |ptr| {
             return windows.funcs.__WSAFDIsSet(sock.internal, ptr) != 0;
         }
         return false;
     }
 
-    fn isReadyWrite(self: Self, sock: Socket) callconv(.Inline) bool {
+    inline fn isReadyWrite(self: Self, sock: Socket) bool {
         if (self.write_fd_set.getSelectPointer()) |ptr| {
             return windows.funcs.__WSAFDIsSet(sock.internal, ptr) != 0;
         }
         return false;
     }
 
-    fn isFaulted(self: Self, sock: Socket) callconv(.Inline) bool {
+    inline fn isFaulted(self: Self, sock: Socket) bool {
         if (self.except_fd_set.getSelectPointer()) |ptr| {
             return windows.funcs.__WSAFDIsSet(sock.internal, ptr) != 0;
         }

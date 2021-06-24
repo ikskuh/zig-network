@@ -767,8 +767,8 @@ const WindowsOSLogic = struct {
     }
 
     inline fn clear(self: *Self) void {
-        self.read_fds.shrink(0);
-        self.write_fds.shrink(0);
+        self.read_fds.shrinkRetainingCapacity(0);
+        self.write_fds.shrinkRetainingCapacity(0);
 
         self.read_fd_set.clear();
         self.write_fd_set.clear();

@@ -54,6 +54,8 @@ pub const Address = union(AddressFamily) {
         }
 
         pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = options;
             try writer.print("{}.{}.{}.{}", .{
                 value.value[0],
                 value.value[1],
@@ -82,6 +84,8 @@ pub const Address = union(AddressFamily) {
         }
 
         pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+            _ = fmt;
+            _ = options;
             if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
                 try std.fmt.format(writer, "[::ffff:{}.{}.{}.{}]", .{
                     self.value[12],
@@ -184,6 +188,8 @@ pub const EndPoint = struct {
     port: u16,
 
     pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        _ = fmt;
+        _ = options;
         try writer.print("{}:{}", .{
             value.address,
             value.port,
@@ -232,7 +238,6 @@ pub const EndPoint = struct {
     };
 
     fn toSocketAddress(self: Self) SockAddr {
-        var result: std.os.sockaddr align(8) = undefined;
         return switch (self.address) {
             .ipv4 => |addr| SockAddr{
                 .ipv4 = .{
@@ -1050,10 +1055,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
             result.canon_name = try std.mem.dupe(arena, u8, cname);
         }
 
-        var count: usize = 0;
-        for (address_list.addrs) |net_addr| {
-            count += 1;
-        }
+        const count: usize = address_list.addrs.len;
 
         result.endpoints = try arena.alloc(EndPoint, count);
 
@@ -1391,6 +1393,7 @@ const windows = struct {
         addr_size: *std.os.socklen_t,
         flags: u32,
     ) std.os.AcceptError!ws2_32.SOCKET {
+        _ = flags;
         while (true) {
             const result = funcs.accept(sock, addr, addr_size);
             if (result == ws2_32.INVALID_SOCKET) {
@@ -1447,6 +1450,7 @@ const windows = struct {
     pub const SelectError = error{FileDescriptorNotASocket} || std.os.UnexpectedError;
 
     fn select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: ?*const timeval) SelectError!usize {
+        _ = nfds;
         while (true) {
             // Windows ignores nfds so we just pass zero here.
             const result = funcs.select(0, read_fds, write_fds, except_fds, timeout);

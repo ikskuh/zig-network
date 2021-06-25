@@ -3,7 +3,7 @@ const std = @import("std");
 const pkgs = struct {
     const network = std.build.Pkg{
         .name = "network",
-        .path = "network.zig",
+        .path = .{ .path = "network.zig" },
     };
 };
 

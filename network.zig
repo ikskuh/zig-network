@@ -264,7 +264,7 @@ pub const EndPoint = struct {
 /// incoming connections if bound as a TCP server.
 pub const Socket = struct {
     pub const SendError = (std.os.SendError || std.os.SendToError);
-    pub const ReceiveError = std.os.RecvFromError;
+    pub const ReceiveError = std.os.RecvFromError || error{FileDescriptorNotASocket};
 
     pub const Reader = std.io.Reader(Socket, ReceiveError, receive);
     pub const Writer = std.io.Writer(Socket, SendError, send);
@@ -1303,7 +1303,7 @@ const windows = struct {
         flags: u32,
         src_addr: ?*std.os.sockaddr,
         addrlen: ?*std.os.socklen_t,
-    ) std.os.RecvFromError!usize {
+    ) Socket.ReceiveError!usize {
         if (std.io.is_async and std.event.Loop.instance != null) {
             const loop = std.event.Loop.instance.?;
 
@@ -1355,7 +1355,7 @@ const windows = struct {
                     .WSAEFAULT => unreachable,
                     .WSAEINVAL => unreachable,
                     .WSAEISCONN => unreachable,
-                    .WSAENOTSOCK => unreachable,
+                    .WSAENOTSOCK => error.FileDescriptorNotASocket,
                     .WSAESHUTDOWN => unreachable,
                     .WSAEOPNOTSUPP => unreachable,
                     .WSAEWOULDBLOCK => error.WouldBlock,

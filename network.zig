@@ -911,15 +911,15 @@ fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.soc
     const getpeername_fix = if (std.os.system == std.c) MissingCApi.getpeername else std.os.system.getpeername;
 
     switch (std.os.errno(getpeername_fix(sockfd, addr, addrlen))) {
-        0 => return,
+        .SUCCESS => return,
         else => |err| return std.os.unexpectedErrno(err),
 
-        std.os.EBADF => unreachable, // always a race condition
-        std.os.EFAULT => unreachable,
-        std.os.EINVAL => unreachable, // invalid parameters
-        std.os.ENOTSOCK => unreachable,
-        std.os.ENOBUFS => return error.SystemResources,
-        std.os.ENOTCONN => return error.NotConnected,
+        .BADF => unreachable, // always a race condition
+        .FAULT => unreachable,
+        .INVAL => unreachable, // invalid parameters
+        .NOTSOCK => unreachable,
+        .NOBUFS => return error.SystemResources,
+        .NOTCONN => return error.NotConnected,
     }
 }
 

@@ -1,8 +1,8 @@
 const std = @import("std");
 
 comptime {
-    std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr_in));
-    // std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr_in6));
+    std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr.in));
+    // std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr.in6));
 }
 
 const is_windows = std.builtin.os.tag == .windows;
@@ -151,15 +151,15 @@ pub const AddressFamily = enum {
 
     fn toNativeAddressFamily(af: Self) u32 {
         return switch (af) {
-            .ipv4 => std.os.AF_INET,
-            .ipv6 => std.os.AF_INET6,
+            .ipv4 => std.os.AF.INET,
+            .ipv6 => std.os.AF.INET6,
         };
     }
 
     fn fromNativeAddressFamily(af: i32) !Self {
         return switch (af) {
-            std.os.AF_INET => .ipv4,
-            std.os.AF_INET6 => .ipv6,
+            std.os.AF.INET => .ipv4,
+            std.os.AF.INET6 => .ipv6,
             else => return error.UnsupportedAddressFamily,
         };
     }
@@ -174,8 +174,8 @@ pub const Protocol = enum {
 
     fn toSocketType(proto: Self) u32 {
         return switch (proto) {
-            .tcp => std.os.SOCK_STREAM,
-            .udp => std.os.SOCK_DGRAM,
+            .tcp => std.os.SOCK.STREAM,
+            .udp => std.os.SOCK.DGRAM,
         };
     }
 };
@@ -198,10 +198,10 @@ pub const EndPoint = struct {
 
     pub fn fromSocketAddress(src: *const std.os.sockaddr, size: usize) !Self {
         switch (src.family) {
-            std.os.AF_INET => {
-                if (size < @sizeOf(std.os.sockaddr_in))
+            std.os.AF.INET => {
+                if (size < @sizeOf(std.os.sockaddr.in))
                     return error.InsufficientBytes;
-                const value = @ptrCast(*const std.os.sockaddr_in, @alignCast(4, src));
+                const value = @ptrCast(*const std.os.sockaddr.in, @alignCast(4, src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = .{
@@ -211,10 +211,10 @@ pub const EndPoint = struct {
                     },
                 };
             },
-            std.os.AF_INET6 => {
-                if (size < @sizeOf(std.os.sockaddr_in6))
+            std.os.AF.INET6 => {
+                if (size < @sizeOf(std.os.sockaddr.in6))
                     return error.InsufficientBytes;
-                const value = @ptrCast(*const std.os.sockaddr_in6, @alignCast(4, src));
+                const value = @ptrCast(*const std.os.sockaddr.in6, @alignCast(4, src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = .{
@@ -233,15 +233,15 @@ pub const EndPoint = struct {
     }
 
     pub const SockAddr = union(AddressFamily) {
-        ipv4: std.os.sockaddr_in,
-        ipv6: std.os.sockaddr_in6,
+        ipv4: std.os.sockaddr.in,
+        ipv6: std.os.sockaddr.in6,
     };
 
     fn toSocketAddress(self: Self) SockAddr {
         return switch (self.address) {
             .ipv4 => |addr| SockAddr{
                 .ipv4 = .{
-                    .family = std.os.AF_INET,
+                    .family = std.os.AF.INET,
                     .port = std.mem.nativeToBig(u16, self.port),
                     .addr = @bitCast(u32, addr.value),
                     .zero = [_]u8{0} ** 8,
@@ -249,7 +249,7 @@ pub const EndPoint = struct {
             },
             .ipv6 => |addr| SockAddr{
                 .ipv6 = .{
-                    .family = std.os.AF_INET6,
+                    .family = std.os.AF.INET6,
                     .port = std.mem.nativeToBig(u16, self.port),
                     .flowinfo = 0,
                     .addr = addr.value,
@@ -284,7 +284,7 @@ pub const Socket = struct {
         // std provides a shim for Darwin to set SOCK_NONBLOCK.
         // Socket creation will only set the flag if we provide the shim rather than the actual flag.
         const socket_type = if (is_unix and std.io.is_async)
-            protocol.toSocketType() | std.os.SOCK_NONBLOCK | std.os.SOCK_CLOEXEC
+            protocol.toSocketType() | std.os.SOCK.NONBLOCK | std.os.SOCK.CLOEXEC
         else
             protocol.toSocketType();
 
@@ -362,8 +362,8 @@ pub const Socket = struct {
         const accept4_fn = if (is_windows) windows.accept4 else std.os.accept;
         const close_fn = if (is_windows) windows.close else std.os.close;
 
-        var addr: std.os.sockaddr_in6 = undefined;
-        var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
+        var addr: std.os.sockaddr.in6 = undefined;
+        var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
         const flags = if (is_windows or is_bsd)
             0
@@ -387,16 +387,16 @@ pub const Socket = struct {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
-        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
         return try send_fn(self.internal, data, flags);
     }
 
     /// Blockingly receives some data from the connected peer.
     /// Will read all available data from the TCP stream or
     /// a UDP packet.
-    pub fn receive(self: Self, data: []u8) !usize {
+    pub fn receive(self: Self, data: []u8) ReceiveError!usize {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
         return try recvfrom_fn(self.internal, data, flags, null, null);
     }
 
@@ -406,11 +406,11 @@ pub const Socket = struct {
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
         // Use the ipv6 sockaddr to gurantee data will fit.
-        var addr: std.os.sockaddr_in6 align(4) = undefined;
-        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
+        var addr: std.os.sockaddr.in6 align(4) = undefined;
+        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         const len = try recvfrom_fn(self.internal, data, flags, addr_ptr, &size);
@@ -425,7 +425,7 @@ pub const Socket = struct {
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) SendError!usize {
         const sendto_fn = if (is_windows) windows.sendto else std.os.sendto;
-        const flags = if (is_windows or is_bsd) 0 else std.os.MSG_NOSIGNAL;
+        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
             .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
@@ -447,8 +447,8 @@ pub const Socket = struct {
     pub fn getLocalEndPoint(self: Self) !EndPoint {
         const getsockname_fn = if (is_windows) windows.getsockname else std.os.getsockname;
 
-        var addr: std.os.sockaddr_in6 align(4) = undefined;
-        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
+        var addr: std.os.sockaddr.in6 align(4) = undefined;
+        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         try getsockname_fn(self.internal, addr_ptr, &size);
@@ -460,8 +460,8 @@ pub const Socket = struct {
     pub fn getRemoteEndPoint(self: Self) !EndPoint {
         const getpeername_fn = if (is_windows) windows.getpeername else getpeername;
 
-        var addr: std.os.sockaddr_in6 align(4) = undefined;
-        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr_in6);
+        var addr: std.os.sockaddr.in6 align(4) = undefined;
+        var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         try getpeername_fn(self.internal, addr_ptr, &size);
@@ -979,7 +979,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.os.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.os.addrinfo;
 
-        const AI_NUMERICSERV = if (is_windows) 0x00000008 else std.c.AI_NUMERICSERV;
+        const AI_NUMERICSERV = if (is_windows) 0x00000008 else std.c.AI.NUMERICSERV;
 
         const name_c = try std.cstr.addNullByte(allocator, name);
         defer allocator.free(name_c);
@@ -989,9 +989,9 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
 
         const hints = addrinfo{
             .flags = AI_NUMERICSERV,
-            .family = std.os.AF_UNSPEC,
-            .socktype = std.os.SOCK_STREAM,
-            .protocol = std.os.IPPROTO_TCP,
+            .family = std.os.AF.UNSPEC,
+            .socktype = std.os.SOCK.STREAM,
+            .protocol = std.os.IPPROTO.TCP,
             .canonname = null,
             .addr = null,
             .addrlen = 0,
@@ -1019,12 +1019,12 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         while (it) |info| : (it = info.next) {
             const sockaddr = info.addr orelse continue;
             const addr: Address = switch (sockaddr.family) {
-                std.os.AF_INET => block: {
+                std.os.AF.INET => block: {
                     const bytes = @ptrCast(*const [4]u8, sockaddr.data[2..]);
                     break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                 },
-                std.os.AF_INET6 => block: {
-                    const sockaddr_in6 = @ptrCast(*align(1) const std.os.sockaddr_in6, sockaddr);
+                std.os.AF.INET6 => block: {
+                    const sockaddr_in6 = @ptrCast(*align(1) const std.os.sockaddr.in6, sockaddr);
                     break :block .{ .ipv6 = Address.IPv6.init(sockaddr_in6.addr, sockaddr_in6.scope_id) };
                 },
                 else => unreachable,
@@ -1062,11 +1062,11 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         var idx: usize = 0;
         for (address_list.addrs) |net_addr| {
             const addr: Address = switch (net_addr.any.family) {
-                std.os.AF_INET => block: {
+                std.os.AF.INET => block: {
                     const bytes = @ptrCast(*const [4]u8, &net_addr.in.sa.addr);
                     break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                 },
-                std.os.AF_INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.sa.addr, net_addr.in6.sa.scope_id) },
+                std.os.AF.INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.sa.addr, net_addr.in6.sa.scope_id) },
                 else => unreachable,
             };
 

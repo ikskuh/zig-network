@@ -337,7 +337,7 @@ pub const Socket = struct {
             // set the options to ON
             const value: u32 = 1;
             const SO_NOSIGPIPE = 0x00000800;
-            try std.os.setsockopt(self.internal, std.os.SOL_SOCKET, SO_NOSIGPIPE, std.mem.asBytes(&value));
+            try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, SO_NOSIGPIPE, std.mem.asBytes(&value));
         }
 
         const connect_fn = if (is_windows) windows.connect else std.os.connect;
@@ -440,7 +440,7 @@ pub const Socket = struct {
         const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
 
         var opt: c_int = if (enabled) 1 else 0;
-        try setsockopt_fn(self.internal, std.os.SOL_SOCKET, std.os.SO_REUSEADDR, std.mem.asBytes(&opt));
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO_REUSEADDR, std.mem.asBytes(&opt));
     }
 
     /// Retrieves the end point to which the socket is bound.
@@ -494,7 +494,7 @@ pub const Socket = struct {
 
         const IP_ADD_MEMBERSHIP = if (is_windows) 5 else 35;
 
-        try setsockopt_fn(self.internal, std.os.SOL_SOCKET, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
     }
 
     /// Gets an reader that allows reading data from the socket.

@@ -1,5 +1,5 @@
 const std = @import("std");
-const network = @import("network.zig");
+const network = @import("network");
 
 test "Get endpoint list" {
     try network.init();

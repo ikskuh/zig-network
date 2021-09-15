@@ -440,7 +440,7 @@ pub const Socket = struct {
         const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
 
         var opt: c_int = if (enabled) 1 else 0;
-        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO_REUSEADDR, std.mem.asBytes(&opt));
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.REUSEADDR, std.mem.asBytes(&opt));
     }
 
     /// Retrieves the end point to which the socket is bound.

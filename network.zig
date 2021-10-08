@@ -1,17 +1,18 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 comptime {
     std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr.in));
     // std.debug.assert(@sizeOf(std.os.sockaddr) >= @sizeOf(std.os.sockaddr.in6));
 }
 
-const is_windows = std.builtin.os.tag == .windows;
-const is_darwin = std.builtin.os.tag.isDarwin();
-const is_linux = std.builtin.os.tag == .linux;
-const is_freebsd = std.builtin.os.tag == .freebsd;
-const is_openbsd = std.builtin.os.tag == .openbsd;
-const is_netbsd = std.builtin.os.tag == .netbsd;
-const is_dragonfly = std.builtin.os.tag == .dragonfly;
+const is_windows = builtin.os.tag == .windows;
+const is_darwin = builtin.os.tag.isDarwin();
+const is_linux = builtin.os.tag == .linux;
+const is_freebsd = builtin.os.tag == .freebsd;
+const is_openbsd = builtin.os.tag == .openbsd;
+const is_netbsd = builtin.os.tag == .netbsd;
+const is_dragonfly = builtin.os.tag == .dragonfly;
 
 // use these to test collections of OS type
 const is_bsd = is_darwin or is_freebsd or is_openbsd or is_netbsd or is_dragonfly;
@@ -96,7 +97,7 @@ pub const Address = union(AddressFamily) {
                 return;
             }
             const big_endian_parts = @ptrCast(*align(1) const [8]u16, &self.value);
-            const native_endian_parts = switch (std.Target.current.cpu.arch.endian()) {
+            const native_endian_parts = switch (builtin.target.cpu.arch.endian()) {
                 .Big => big_endian_parts.*,
                 .Little => blk: {
                     var buf: [8]u16 = undefined;
@@ -578,11 +579,11 @@ pub const SocketSet = struct {
 
 /// Implementation of SocketSet for each platform,
 /// keeps the thing above nice and clean, all functions get inlined.
-const OSLogic = switch (std.builtin.os.tag) {
+const OSLogic = switch (builtin.os.tag) {
     .windows => WindowsOSLogic,
     .linux => LinuxOSLogic,
     .macos, .ios, .watchos, .tvos => DarwinOsLogic,
-    else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
+    else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
 };
 
 // Linux uses `poll()` syscall to wait for socket events.
@@ -873,7 +874,7 @@ const WindowsOSLogic = struct {
 /// If the requested timeout interval requires a finer granularity than the implementation supports, the
 /// actual timeout interval shall be rounded up to the next supported value.
 pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
-    switch (std.builtin.os.tag) {
+    switch (builtin.os.tag) {
         .windows => {
             const read_set = try set.internal.getFdSet(.read);
             const write_set = try set.internal.getFdSet(.write);
@@ -893,7 +894,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             set.internal.fds.items,
             if (timeout) |val| @intCast(i32, (val + std.time.ns_per_s - 1) / std.time.ns_per_s) else -1,
         ),
-        else => @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for SocketSet!"),
+        else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
     }
 }
 
@@ -974,7 +975,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
     const arena = &result.arena.allocator;
     errdefer result.arena.deinit();
 
-    if (std.builtin.link_libc or is_windows) {
+    if (builtin.link_libc or is_windows) {
         const getaddrinfo_fn = if (is_windows) windows.getaddrinfo else libc_getaddrinfo;
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.os.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.os.addrinfo;
@@ -1046,7 +1047,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         return result;
     }
 
-    if (std.builtin.os.tag == .linux) {
+    if (builtin.os.tag == .linux) {
         // Fall back to std.net
         const address_list = try std.net.getAddressList(allocator, name, port);
         defer address_list.deinit();
@@ -1079,7 +1080,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
 
         return result;
     }
-    @compileError("unsupported os " ++ @tagName(std.builtin.os.tag) ++ " for getEndpointList!");
+    @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for getEndpointList!");
 }
 
 const GetAddrInfoError = error{

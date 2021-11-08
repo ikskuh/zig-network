@@ -27,7 +27,9 @@ pub fn build(b: *std.build.Builder) !void {
     const test_step = b.step("test", "Runs the test suite.");
     test_step.dependOn(&test_runner.step);
 
-    const examples_step = b.step("examples", "Builds the examples");
-    examples_step.dependOn(&b.addInstallArtifact(async_example).step);
-    examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
+    const sync_examples_step = b.step("sync-examples", "Builds the examples");
+    sync_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
+
+    const async_examples_step = b.step("async-examples", "Builds the examples");
+    async_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
 }

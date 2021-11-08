@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    - cron: "0 5 * * *" # run at 5 AM UTC, continous integration against master branch
+    - cron: '0 5 * * *' # run at 5 AM UTC, continous integration against master branch
 
 jobs:
   build:
@@ -25,6 +25,11 @@ jobs:
         with:
           version: master
 
-      - name: Compile everything
+      - name: Compile and test synchronous
         run: |
-          zig build examples test install
+          zig build test install sync-examples
+
+      - name: Compile and test asynchronous
+        if: ${{ matrix.platform != 'windows-latest' }}
+        run: |
+          zig build async-examples

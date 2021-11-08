@@ -610,12 +610,12 @@ const LinuxOSLogic = struct {
 
     inline fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
         // Always poll for errors as this is done anyways
-        var mask: i16 = std.os.POLLERR;
+        var mask: i16 = std.os.POLL.ERR;
 
         if (events.read)
-            mask |= std.os.POLLIN;
+            mask |= std.os.POLL.IN;
         if (events.write)
-            mask |= std.os.POLLOUT;
+            mask |= std.os.POLL.OUT;
 
         for (self.fds.items) |*pfd| {
             if (pfd.fd == sock.internal) {
@@ -657,15 +657,15 @@ const LinuxOSLogic = struct {
     }
 
     inline fn isReadyRead(self: Self, sock: Socket) bool {
-        return self.checkMaskAnyBit(sock, std.os.POLLIN);
+        return self.checkMaskAnyBit(sock, std.os.POLL.IN);
     }
 
     inline fn isReadyWrite(self: Self, sock: Socket) bool {
-        return self.checkMaskAnyBit(sock, std.os.POLLOUT);
+        return self.checkMaskAnyBit(sock, std.os.POLL.OUT);
     }
 
     inline fn isFaulted(self: Self, sock: Socket) bool {
-        return self.checkMaskAnyBit(sock, std.os.POLLERR);
+        return self.checkMaskAnyBit(sock, std.os.POLL.ERR);
     }
 };
 

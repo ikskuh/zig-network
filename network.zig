@@ -1038,7 +1038,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
 
             if (info.canonname) |n| {
                 if (result.canon_name == null) {
-                    result.canon_name = try std.mem.dupe(arena, u8, std.mem.spanZ(n));
+                    result.canon_name = try arena.dupe(u8, std.mem.sliceTo(n, 0));
                 }
             }
             i += 1;
@@ -1253,7 +1253,7 @@ const windows = struct {
                     @intCast(DWORD, flags),
                     dest_addr,
                     @intCast(c_int, addrlen),
-                    @ptrCast(*ws2_32.WSAOVERLAPPED, &resume_node.base.overlapped),
+                    &resume_node.base.overlapped,
                     null,
                 );
             }
@@ -1308,7 +1308,7 @@ const windows = struct {
         if (std.io.is_async and std.event.Loop.instance != null) {
             const loop = std.event.Loop.instance.?;
 
-            const wsa_buf = ws2_32.WSABUF{
+            var wsa_buf = ws2_32.WSABUF{
                 .len = @intCast(ULONG, buf.len),
                 .buf = buf.ptr,
             };
@@ -1322,19 +1322,25 @@ const windows = struct {
                 },
             };
 
+            var addrlen_converted: i32 = if (addrlen) |val| @intCast(i32, val.*) else undefined;
+
             loop.beginOneEvent();
             suspend {
                 _ = ws2_32.WSARecvFrom(
                     sock,
-                    @ptrCast([*]const ws2_32.WSABUF, &wsa_buf),
+                    @as(*[1]ws2_32.WSABUF, &wsa_buf),
                     1,
                     null,
                     &lpFlags,
                     src_addr,
-                    addrlen,
-                    @ptrCast(*ws2_32.WSAOVERLAPPED, &resume_node.base.overlapped),
+                    if (addrlen != null) &addrlen_converted else null,
+                    &resume_node.base.overlapped,
                     null,
                 );
+            }
+
+            if (addrlen) |val| {
+                val.* = @intCast(u32, addrlen_converted);
             }
 
             var bytes_transferred: DWORD = undefined;

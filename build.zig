@@ -13,6 +13,8 @@ pub fn build(b: *std.build.Builder) !void {
 
     var test_runner = b.addTest("testsuite.zig");
     test_runner.addPackage(pkgs.network);
+    test_runner.setBuildMode(mode);
+    test_runner.setTarget(target);
 
     const async_example = b.addExecutable("async", "examples/async.zig");
     async_example.setBuildMode(mode);

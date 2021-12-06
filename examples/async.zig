@@ -18,7 +18,7 @@ pub fn main() !void {
     });
 
     try server.listen();
-    std.debug.warn("listening at {}\n", .{try server.getLocalEndPoint()});
+    std.log.info("listening at {}\n", .{try server.getLocalEndPoint()});
     while (true) {
         std.debug.print("Waiting for connection\n", .{});
         const client = try allocator.create(Client);

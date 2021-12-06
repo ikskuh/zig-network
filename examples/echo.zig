@@ -16,7 +16,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    const allocator = &gpa.allocator;
+    const allocator = gpa.allocator();
 
     var args_iter = std.process.args();
     const exe_name = try (args_iter.next(allocator) orelse return error.MissingArgument);

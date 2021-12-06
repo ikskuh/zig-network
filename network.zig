@@ -227,7 +227,7 @@ pub const EndPoint = struct {
                 };
             },
             else => {
-                std.debug.warn("got invalid socket address: {}\n", .{src});
+                std.log.info("got invalid socket address: {}\n", .{src});
                 return error.UnsupportedAddressFamily;
             },
         }
@@ -531,7 +531,7 @@ pub const SocketSet = struct {
     /// Initialize a new socket set. This can be reused for
     /// multiple queries without having to reset the set every time.
     /// Call `deinit()` to free the socket set.
-    pub fn init(allocator: *std.mem.Allocator) !Self {
+    pub fn init(allocator: std.mem.Allocator) !Self {
         return Self{
             .internal = try OSLogic.init(allocator),
         };
@@ -594,7 +594,7 @@ const LinuxOSLogic = struct {
 
     fds: std.ArrayList(std.os.pollfd),
 
-    inline fn init(allocator: *std.mem.Allocator) !Self {
+    inline fn init(allocator: std.mem.Allocator) !Self {
         return Self{
             .fds = std.ArrayList(std.os.pollfd).init(allocator),
         };
@@ -689,7 +689,7 @@ const WindowsOSLogic = struct {
             return @ptrCast([*]windows.ws2_32.SOCKET, @ptrCast([*]u8, self) + 4 * @sizeOf(c_uint))[0..self.size];
         }
 
-        fn make(allocator: *std.mem.Allocator) !*align(8) FdSet {
+        fn make(allocator: std.mem.Allocator) !*align(8) FdSet {
             // Initialize with enough space for 8 sockets.
             var mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
 
@@ -706,7 +706,7 @@ const WindowsOSLogic = struct {
             return @ptrCast([*]u8, self)[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows.ws2_32.SOCKET))];
         }
 
-        fn deinit(self: *align(8) FdSet, allocator: *std.mem.Allocator) void {
+        fn deinit(self: *align(8) FdSet, allocator: std.mem.Allocator) void {
             allocator.free(self.memSlice());
         }
 
@@ -717,7 +717,7 @@ const WindowsOSLogic = struct {
             return false;
         }
 
-        fn addFd(fd_set: **align(8) FdSet, allocator: *std.mem.Allocator, new_fd: windows.ws2_32.SOCKET) !void {
+        fn addFd(fd_set: **align(8) FdSet, allocator: std.mem.Allocator, new_fd: windows.ws2_32.SOCKET) !void {
             if (fd_set.*.size == fd_set.*.capacity) {
                 // Double our capacity.
                 const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
@@ -737,7 +737,7 @@ const WindowsOSLogic = struct {
 
     const Self = @This();
 
-    allocator: *std.mem.Allocator,
+    allocator: std.mem.Allocator,
 
     read_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
     write_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
@@ -746,7 +746,7 @@ const WindowsOSLogic = struct {
     write_fd_set: *align(8) FdSet,
     except_fd_set: *align(8) FdSet,
 
-    inline fn init(allocator: *std.mem.Allocator) !Self {
+    inline fn init(allocator: std.mem.Allocator) !Self {
         // TODO: https://github.com/ziglang/zig/issues/5391
         var read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
         var write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
@@ -925,7 +925,7 @@ fn getpeername(sockfd: std.os.fd_t, addr: *std.os.sockaddr, addrlen: *std.os.soc
 }
 
 pub fn connectToHost(
-    allocator: *std.mem.Allocator,
+    allocator: std.mem.Allocator,
     name: []const u8,
     port: u16,
     protocol: Protocol,
@@ -959,12 +959,12 @@ pub const EndpointList = struct {
 // Code adapted from std.net
 
 /// Call `EndpointList.deinit` on the result.
-pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u16) !*EndpointList {
+pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16) !*EndpointList {
     const result = blk: {
         var arena = std.heap.ArenaAllocator.init(allocator);
         errdefer arena.deinit();
 
-        const result = try arena.allocator.create(EndpointList);
+        const result = try arena.allocator().create(EndpointList);
         result.* = EndpointList{
             .arena = arena,
             .endpoints = undefined,
@@ -972,7 +972,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         };
         break :blk result;
     };
-    const arena = &result.arena.allocator;
+    const arena = result.arena.allocator();
     errdefer result.arena.deinit();
 
     if (builtin.link_libc or is_windows) {
@@ -1053,7 +1053,7 @@ pub fn getEndpointList(allocator: *std.mem.Allocator, name: []const u8, port: u1
         defer address_list.deinit();
 
         if (address_list.canon_name) |cname| {
-            result.canon_name = try std.mem.dupe(arena, u8, cname);
+            result.canon_name = try arena.dupe(u8, cname);
         }
 
         const count: usize = address_list.addrs.len;

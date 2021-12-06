@@ -30,6 +30,6 @@ jobs:
           zig build test install sync-examples
 
       - name: Compile and test asynchronous
-        if: ${{ matrix.platform != 'windows-latest' }}
+        # if: ${{ matrix.platform != 'windows-latest' }}
         run: |
           zig build async-examples

@@ -1157,7 +1157,7 @@ const windows = struct {
         extern "ws2_32" fn setsockopt(s: ws2_32.SOCKET, level: c_int, optname: c_int, optval: [*c]const u8, optlen: c_int) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn getsockname(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn getpeername(s: ws2_32.SOCKET, name: [*c]std.os.sockaddr, namelen: [*c]std.os.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn select(nfds: c_int, readfds: ?*c_void, writefds: ?*c_void, exceptfds: ?*c_void, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
+        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
         extern "ws2_32" fn bind(s: ws2_32.SOCKET, addr: [*c]const std.os.sockaddr, namelen: std.os.socklen_t) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const addrinfo, result: **addrinfo) callconv(std.os.windows.WINAPI) c_int;

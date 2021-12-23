@@ -19,10 +19,10 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var args_iter = std.process.args();
-    const exe_name = try (args_iter.next(allocator) orelse return error.MissingArgument);
+    const exe_name = (try args_iter.next(allocator)) orelse return error.MissingArgument;
     defer allocator.free(exe_name);
 
-    const port_name = try (args_iter.next(allocator) orelse return error.MissingArgument);
+    const port_name = (try args_iter.next(allocator)) orelse return error.MissingArgument;
     defer allocator.free(port_name);
 
     const port_number = try std.fmt.parseInt(u16, port_name, 10);

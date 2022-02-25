@@ -286,6 +286,8 @@ pub const Socket = struct {
         // Socket creation will only set the flag if we provide the shim rather than the actual flag.
         const socket_type = if (is_unix and std.io.is_async)
             protocol.toSocketType() | std.os.SOCK.NONBLOCK | std.os.SOCK.CLOEXEC
+        else if (is_unix)
+            protocol.toSocketType() | std.os.SOCK.CLOEXEC
         else
             protocol.toSocketType();
 

@@ -1,4 +1,5 @@
 const std = @import("std");
+const os = @import("os");
 const builtin = @import("builtin");
 
 comptime {
@@ -41,6 +42,7 @@ pub const Address = union(AddressFamily) {
         pub const any = IPv4.init(0, 0, 0, 0);
         pub const broadcast = IPv4.init(255, 255, 255, 255);
         pub const loopback = IPv4.init(127, 0, 0, 1);
+        pub const multicast_all = IPv4.init(224, 0, 0, 1);
 
         value: [4]u8,
 
@@ -186,7 +188,7 @@ pub const EndPoint = struct {
     const Self = @This();
 
     address: Address,
-    port: u16,
+    port: u16, // Stored as native, will convert to bigEndian when moving to sockaddr
 
     pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;
@@ -275,7 +277,8 @@ pub const Socket = struct {
 
     family: AddressFamily,
     internal: NativeSocket,
-    endpoint: ?EndPoint,
+    connected_to: ?EndPoint,
+    bound_to: ?EndPoint,
 
     /// Spawns a new socket that must be freed with `close()`.
     /// `family` defines the socket family, `protocol` the protocol used.
@@ -294,7 +297,8 @@ pub const Socket = struct {
         return Self{
             .family = family,
             .internal = try socket_fn(family.toNativeAddressFamily(), socket_type, 0),
-            .endpoint = null,
+            .connected_to = null,
+            .bound_to = null,
         };
     }
 
@@ -305,7 +309,8 @@ pub const Socket = struct {
     }
 
     /// Binds the socket to the given end point.
-    pub fn bind(self: Self, ep: EndPoint) !void {
+    pub fn bind(self: *Self, ep: EndPoint) !void {
+        self.bound_to = ep;
         const bind_fn = if (is_windows) windows.bind else std.os.bind;
 
         switch (ep.toSocketAddress()) {
@@ -316,7 +321,7 @@ pub const Socket = struct {
 
     /// Binds the socket to all supported addresses on the local device.
     /// This will use the any IP (`0.0.0.0` for IPv4).
-    pub fn bindToPort(self: Self, port: u16) !void {
+    pub fn bindToPort(self: *Self, port: u16) !void {
         return switch (self.family) {
             .ipv4 => self.bind(EndPoint{
                 .address = Address{ .ipv4 = Address.IPv4.any },
@@ -348,7 +353,7 @@ pub const Socket = struct {
             .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
             .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
         }
-        self.endpoint = target;
+        self.connected_to = target;
     }
 
     /// Makes this socket a TCP server and allows others to connect to
@@ -379,7 +384,8 @@ pub const Socket = struct {
         return Socket{
             .family = try AddressFamily.fromNativeAddressFamily(addr_ptr.family),
             .internal = fd,
-            .endpoint = null,
+            .connected_to = null,
+            .bound_to = null,
         };
     }
 
@@ -387,7 +393,7 @@ pub const Socket = struct {
     /// will always send full packets, on TCP it will append
     /// to the stream.
     pub fn send(self: Self, data: []const u8) SendError!usize {
-        if (self.endpoint) |ep|
+        if (self.connected_to) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
@@ -409,14 +415,14 @@ pub const Socket = struct {
     /// was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
-        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
+        const flags = if (is_linux) std.os.linux.MSG.NOSIGNAL else 0;
 
         // Use the ipv6 sockaddr to gurantee data will fit.
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
-        const len = try recvfrom_fn(self.internal, data, flags, addr_ptr, &size);
+        const len = try recvfrom_fn(self.internal, data, flags | 4, addr_ptr, &size);
 
         return ReceiveFrom{
             .numberOfBytes = len,
@@ -495,9 +501,10 @@ pub const Socket = struct {
             .imr_ifindex = 0, // this cannot be crossplatform, so we set it to zero
         };
 
-        const IP_ADD_MEMBERSHIP = if (is_windows) 5 else 35;
+        const IP_ADD_MEMBERSHIP = if (is_windows) 5 else if (is_bsd) 12 else 35;
+        const level = if (is_bsd) std.os.IPPROTO.IP else std.os.SOL.SOCKET;
 
-        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
+        try setsockopt_fn(self.internal, level, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
     }
 
     /// Gets an reader that allows reading data from the socket.

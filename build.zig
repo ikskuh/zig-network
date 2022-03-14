@@ -26,6 +26,11 @@ pub fn build(b: *std.build.Builder) !void {
     echo_example.setTarget(target);
     echo_example.addPackage(pkgs.network);
 
+    const udp_example = b.addExecutable("udp", "examples/multicast_udp.zig");
+    udp_example.setBuildMode(mode);
+    udp_example.setTarget(target);
+    udp_example.addPackage(pkgs.network);
+
     const test_step = b.step("test", "Runs the test suite.");
     test_step.dependOn(&test_runner.step);
 
@@ -34,4 +39,7 @@ pub fn build(b: *std.build.Builder) !void {
 
     const async_examples_step = b.step("async-examples", "Builds the examples");
     async_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
+
+    const udp_examples_step = b.step("udp-examples", "Builds multicast udp examples");
+    udp_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
 }

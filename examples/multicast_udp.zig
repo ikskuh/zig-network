@@ -11,11 +11,9 @@ const network = @import("network");
 // for the same UDP broadcast on the same port.
 
 // test this by doing this from any machine on the network
-// echo "this is a test" | nc -u 224.0.0.1 9999
+// echo "this is a test" | nc -u -w0 224.0.0.1 9999
 
 pub fn main() !void {
-    const port_number = 9999;
-
     try network.init();
     defer network.deinit();
 
@@ -28,7 +26,7 @@ pub fn main() !void {
     try sock.enablePortReuse(true);
     const incoming_endpoint = network.EndPoint{
         .address = network.Address{ .ipv4 = network.Address.IPv4.multicast_all },
-        .port = port_number,
+        .port = 9999,
     };
     sock.bind(incoming_endpoint) catch |err| {
         std.debug.print("failed to bind to {}:{}\n", .{ incoming_endpoint, err });
@@ -44,7 +42,7 @@ pub fn main() !void {
     };
 
     // Setup the readloop
-    std.debug.print("Waiting for UDP messages from socket {}\n", .{sock.bound_to});
+    std.debug.print("Waiting for UDP messages from socket {}\n", .{sock.getLocalEndPoint()});
     const buflen = 4096;
     var msg: [buflen]u8 = undefined;
     const r = sock.reader();

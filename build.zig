@@ -31,6 +31,16 @@ pub fn build(b: *std.build.Builder) !void {
     udp_example.setTarget(target);
     udp_example.addPackage(pkgs.network);
 
+    const discovery_client = b.addExecutable("discovery_client", "examples/discovery/client.zig");
+    discovery_client.setBuildMode(mode);
+    discovery_client.setTarget(target);
+    discovery_client.addPackage(pkgs.network);
+
+    const discovery_server = b.addExecutable("discovery_server", "examples/discovery/server.zig");
+    discovery_server.setBuildMode(mode);
+    discovery_server.setTarget(target);
+    discovery_server.addPackage(pkgs.network);
+
     const test_step = b.step("test", "Runs the test suite.");
     test_step.dependOn(&test_runner.step);
 
@@ -40,6 +50,10 @@ pub fn build(b: *std.build.Builder) !void {
     const async_examples_step = b.step("async-examples", "Builds the examples");
     async_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
 
-    const udp_examples_step = b.step("udp-examples", "Builds multicast udp examples");
+    const udp_examples_step = b.step("udp-examples", "Builds UDP examples");
     udp_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
+
+    const discovery_examples_step = b.step("discovery-examples", "Builds UDP/TCP Server Discovery examples");
+    discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
+    discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
 }

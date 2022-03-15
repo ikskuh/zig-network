@@ -1,5 +1,6 @@
 const std = @import("std");
 const network = @import("network");
+const expect = std.testing.expect;
 
 test "Get endpoint list" {
     try network.init();

@@ -277,8 +277,7 @@ pub const Socket = struct {
 
     family: AddressFamily,
     internal: NativeSocket,
-    connected_to: ?EndPoint,
-    bound_to: ?EndPoint,
+    endpoint: ?EndPoint,
 
     /// Spawns a new socket that must be freed with `close()`.
     /// `family` defines the socket family, `protocol` the protocol used.
@@ -297,8 +296,7 @@ pub const Socket = struct {
         return Self{
             .family = family,
             .internal = try socket_fn(family.toNativeAddressFamily(), socket_type, 0),
-            .connected_to = null,
-            .bound_to = null,
+            .endpoint = null,
         };
     }
 
@@ -310,7 +308,6 @@ pub const Socket = struct {
 
     /// Binds the socket to the given end point.
     pub fn bind(self: *Self, ep: EndPoint) !void {
-        self.bound_to = ep;
         const bind_fn = if (is_windows) windows.bind else std.os.bind;
 
         switch (ep.toSocketAddress()) {
@@ -353,7 +350,7 @@ pub const Socket = struct {
             .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
             .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
         }
-        self.connected_to = target;
+        self.endpoint = target;
     }
 
     /// Makes this socket a TCP server and allows others to connect to
@@ -373,9 +370,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 = undefined;
         var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        const flags = if (is_windows or is_bsd)
-            0
-        else if (std.io.is_async) std.os.O.NONBLOCK else 0;
+        const flags = if (is_windows) 0 else if (std.io.is_async) std.os.O.NONBLOCK else 0;
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
         const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
@@ -384,8 +379,7 @@ pub const Socket = struct {
         return Socket{
             .family = try AddressFamily.fromNativeAddressFamily(addr_ptr.family),
             .internal = fd,
-            .connected_to = null,
-            .bound_to = null,
+            .endpoint = null,
         };
     }
 
@@ -393,7 +387,7 @@ pub const Socket = struct {
     /// will always send full packets, on TCP it will append
     /// to the stream.
     pub fn send(self: Self, data: []const u8) SendError!usize {
-        if (self.connected_to) |ep|
+        if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
         const send_fn = if (is_windows) windows.send else std.os.send;
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;

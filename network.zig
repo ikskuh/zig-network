@@ -753,8 +753,8 @@ const WindowsOSLogic = struct {
         // TODO: https://github.com/ziglang/zig/issues/5391
         var read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
         var write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
-        try read_fds.ensureCapacity(allocator, 8);
-        try write_fds.ensureCapacity(allocator, 8);
+        try read_fds.ensureTotalCapacity(allocator, 8);
+        try write_fds.ensureTotalCapacity(allocator, 8);
 
         return Self{
             .allocator = allocator,

@@ -42,7 +42,7 @@ pub fn main() !void {
     };
 
     // Setup the readloop
-    std.debug.print("Waiting for UDP messages from socket {}\n", .{sock.getLocalEndPoint()});
+    std.debug.print("Waiting for UDP messages from socket {!}\n", .{sock.getLocalEndPoint()});
     const buflen = 4096;
     var msg: [buflen]u8 = undefined;
     const r = sock.reader();

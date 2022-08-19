@@ -416,7 +416,7 @@ pub const Socket = struct {
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
         var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
-        const len = try recvfrom_fn(self.internal, data, flags | if (windows) 0 else 4, addr_ptr, &size);
+        const len = try recvfrom_fn(self.internal, data, flags | 4, addr_ptr, &size);
 
         return ReceiveFrom{
             .numberOfBytes = len,

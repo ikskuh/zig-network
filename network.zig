@@ -66,6 +66,36 @@ pub const Address = union(AddressFamily) {
                 value.value[3],
             });
         }
+
+        pub fn parse(string: []const u8) !IPv4 {
+            var dot_it = std.mem.split(u8, string, ".");
+
+            var d0 = dot_it.next().?; // is always != null
+            var d1 = dot_it.next();
+            var d2 = dot_it.next();
+            var d3 = dot_it.next();
+
+            var ip = IPv4{ .value = undefined };
+            if (d3 != null) {
+                ip.value[0] = try std.fmt.parseInt(u8, d0, 10);
+                ip.value[1] = try std.fmt.parseInt(u8, d1.?, 10);
+                ip.value[2] = try std.fmt.parseInt(u8, d2.?, 10);
+                ip.value[3] = try std.fmt.parseInt(u8, d3.?, 10);
+            } else if (d2 != null) {
+                ip.value[0] = try std.fmt.parseInt(u8, d0, 10);
+                ip.value[1] = try std.fmt.parseInt(u8, d1.?, 10);
+                const int = try std.fmt.parseInt(u16, d2.?, 10);
+                std.mem.writeIntBig(u16, ip.value[2..4], int);
+            } else if (d1 != null) {
+                ip.value[0] = try std.fmt.parseInt(u8, d0, 10);
+                const int = try std.fmt.parseInt(u24, d1.?, 10);
+                std.mem.writeIntBig(u24, ip.value[1..4], int);
+            } else {
+                const int = try std.fmt.parseInt(u32, d0, 10);
+                std.mem.writeIntBig(u32, &ip.value, int);
+            }
+            return ip;
+        }
     };
 
     pub const IPv6 = struct {

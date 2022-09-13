@@ -27,3 +27,23 @@ test "Connect to an echo server" {
     var buf: [128]u8 = undefined;
     std.debug.print("Echo: {s}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
 }
+
+test "IPv4 parse" {
+    const make = network.Address.IPv4.init;
+    const parse = network.Address.IPv4.parse;
+
+    try std.testing.expectEqual(make(0, 0, 0, 0), try parse("0"));
+    try std.testing.expectEqual(make(0, 0, 0, 0), try parse("0.0"));
+    try std.testing.expectEqual(make(0, 0, 0, 0), try parse("0.0.0"));
+    try std.testing.expectEqual(make(0, 0, 0, 0), try parse("0.0.0.0"));
+
+    try std.testing.expectEqual(make(0, 0, 0, 10), try parse("10"));
+    try std.testing.expectEqual(make(20, 0, 0, 10), try parse("20.10"));
+    try std.testing.expectEqual(make(30, 20, 0, 10), try parse("30.20.10"));
+    try std.testing.expectEqual(make(40, 30, 20, 10), try parse("40.30.20.10"));
+
+    try std.testing.expectEqual(make(127, 0, 0, 1), try parse("2130706433"));
+    try std.testing.expectEqual(make(127, 10, 20, 30), try parse("127.660510"));
+    try std.testing.expectEqual(make(127, 33, 10, 20), try parse("127.33.2580"));
+    try std.testing.expectEqual(make(255, 255, 255, 255), try parse("255.255.255.255"));
+}

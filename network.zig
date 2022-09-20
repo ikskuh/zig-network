@@ -423,6 +423,15 @@ pub const Socket = struct {
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
         return try send_fn(self.internal, data, flags);
     }
+    
+    /// Non-Blockingly peeks at data from the connected peer.
+    /// Will not change the stream state.
+    pub fn peek(self: Self, data: []u8) ReceiveError!usize {
+        const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
+        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.PEEK;
+        return try recvfrom_fn(self.internal, data, flags, null, null);   
+    }
+
 
     /// Blockingly receives some data from the connected peer.
     /// Will read all available data from the TCP stream or

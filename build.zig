@@ -20,6 +20,7 @@ pub fn build(b: *std.build.Builder) !void {
     async_example.setBuildMode(mode);
     async_example.setTarget(target);
     async_example.addPackage(pkgs.network);
+    async_example.use_stage1 = true;
 
     const echo_example = b.addExecutable("echo", "examples/echo.zig");
     echo_example.setBuildMode(mode);

@@ -361,6 +361,20 @@ pub const Socket = struct {
         };
     }
 
+    /// Set socket timeouts for read and write in milliseconds
+    /// Pass value 0 to reset timeout
+    pub fn setTimeout(self: *Self, read: u32, write: u32) !void {
+        const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
+        var read_timeout: std.os.timeval = undefined;
+        read_timeout.tv_sec = @divTrunc(read, 1000);
+        read_timeout.tv_usec = @mod(read * 1000, 1000000);
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
+        var write_timeout: std.os.timeval = undefined;
+        write_timeout.tv_sec = @divTrunc(write, 1000);
+        write_timeout.tv_usec = @mod(write * 1000, 1000000);
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
+    }
+
     /// Connects the UDP or TCP socket to a remote server.
     /// The `target` address type must fit the address type of the socket.
     pub fn connect(self: *Self, target: EndPoint) !void {

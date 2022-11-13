@@ -28,6 +28,22 @@ test "Connect to an echo server" {
     std.debug.print("Echo: {s}", .{buf[0..try sock.reader().readAll(buf[0..msg.len])]});
 }
 
+test "UDP timeout" {
+    try network.init();
+    defer network.deinit();
+
+    var sock = try network.Socket.create(.ipv4, .udp);
+    defer sock.close();
+    try sock.connect(.{
+        .address = .{
+            .ipv4 = network.Address.IPv4.init(1, 1, 1, 1)
+        },
+        .port = 53,
+    });
+    try sock.setReadTimeout(3000000); // 3 seconds
+    try std.testing.expectError(error.WouldBlock, sock.reader().readByte());
+}
+
 test "IPv4 parse" {
     const make = network.Address.IPv4.init;
     const parse = network.Address.IPv4.parse;

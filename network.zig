@@ -369,21 +369,23 @@ pub const Socket = struct {
 
     /// Set socket read timeout in microseconds
     pub fn setReadTimeout(self: *Self, read: ?u32) !void {
-        std.debug.assert(if (read) |micros| micros != 0 else true);
+        std.debug.assert(read == null or read.? != 0);
+        const micros = read orelse 0;
         const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
         var read_timeout: std.os.timeval = undefined;
-        read_timeout.tv_sec = if (read) |micros| @divTrunc(micros, 1000000) else 0;
-        read_timeout.tv_usec = if (read) |micros| @mod(micros, 1000000) else 0;
+        read_timeout.tv_sec = @divTrunc(micros, 1000000);
+        read_timeout.tv_usec = @mod(micros, 1000000);
         try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
     }
 
     /// Set socket write timeout (and also connection timeout) in microseconds
     pub fn setWriteTimeout(self: *Self, write: ?u32) !void {
-        std.debug.assert(if (write) |micros| micros != 0 else true);
+        std.debug.assert(write == null or write.? != 0);
+        const micros = write orelse 0;
         const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
         var write_timeout: std.os.timeval = undefined;
-        write_timeout.tv_sec = if (write) |micros| @divTrunc(micros, 1000000) else 0;
-        write_timeout.tv_usec = if (write) |micros| @mod(micros, 1000000) else 0;
+        write_timeout.tv_sec = @divTrunc(micros, 1000000);
+        write_timeout.tv_usec = @mod(micros, 1000000);
         try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
     }
 

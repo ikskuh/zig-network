@@ -361,8 +361,6 @@ pub const Socket = struct {
         };
     }
 
-    /// Set socket timeouts for read and write in milliseconds
-    /// Pass value 0 to reset timeout
     pub fn setTimeout(self: *Self, read: u32, write: u32) !void {
         const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
         var read_timeout: std.os.timeval = undefined;
@@ -372,6 +370,30 @@ pub const Socket = struct {
         var write_timeout: std.os.timeval = undefined;
         write_timeout.tv_sec = @divTrunc(write, 1000);
         write_timeout.tv_usec = @mod(write * 1000, 1000000);
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
+    }
+
+    /// Set socket timeouts for read and write in milliseconds
+    pub fn setTimeouts(self: *Self, read: ?u32, write: ?u32) !void {
+        try self.setReadTimeout(read);
+        try self.setWriteTimeout(write);
+    }
+
+    /// Set socket read timeout in milliseconds
+    pub fn setReadTimeout(self: *Self, read: ?u32) !void {
+        const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
+        var read_timeout: std.os.timeval = undefined;
+        read_timeout.tv_sec = if (read) |millis| @divTrunc(millis, 1000) else 0;
+        read_timeout.tv_usec = if (read) |millis| @mod(millis * 1000, 1000000) else 0;
+        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
+    }
+
+    /// Set socket write timeout (and also connection timeout) in milliseconds
+    pub fn setWriteTimeout(self: *Self, write: ?u32) !void {
+        const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
+        var write_timeout: std.os.timeval = undefined;
+        write_timeout.tv_sec = if (write) |millis| @divTrunc(millis, 1000) else 0;
+        write_timeout.tv_usec = if (write) |millis| @mod(millis * 1000, 1000000) else 0;
         try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
     }
 

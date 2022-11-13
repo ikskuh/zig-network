@@ -376,8 +376,8 @@ pub const Socket = struct {
             try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&val));
         } else {
             var read_timeout: std.os.timeval = undefined;
-            read_timeout.tv_sec = @divTrunc(micros, 1000000);
-            read_timeout.tv_usec = @mod(micros, 1000000);
+            read_timeout.tv_sec = @intCast(@TypeOf(read_timeout.tv_sec), @divTrunc(micros, 1000000));
+            read_timeout.tv_usec = @intCast(@TypeOf(read_timeout.tv_sec), @mod(micros, 1000000));
             try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
         }
     }
@@ -391,8 +391,8 @@ pub const Socket = struct {
             try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.asBytes(&val));
         } else {
             var write_timeout: std.os.timeval = undefined;
-            write_timeout.tv_sec = @divTrunc(micros, 1000000);
-            write_timeout.tv_usec = @mod(micros, 1000000);
+            write_timeout.tv_sec = @intCast(@TypeOf(write_timeout.tv_sec), @divTrunc(micros, 1000000));
+            write_timeout.tv_usec = @intCast(@TypeOf(write_timeout.tv_usec), @mod(micros, 1000000));
             try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
         }
     }

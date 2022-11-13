@@ -377,7 +377,7 @@ pub const Socket = struct {
         } else {
             var read_timeout: std.os.timeval = undefined;
             read_timeout.tv_sec = @intCast(@TypeOf(read_timeout.tv_sec), @divTrunc(micros, 1000000));
-            read_timeout.tv_usec = @intCast(@TypeOf(read_timeout.tv_sec), @mod(micros, 1000000));
+            read_timeout.tv_usec = @intCast(@TypeOf(read_timeout.tv_usec), @mod(micros, 1000000));
             try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
         }
     }

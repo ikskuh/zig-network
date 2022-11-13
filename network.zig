@@ -382,7 +382,7 @@ pub const Socket = struct {
         }
     }
 
-    /// Set socket write timeout (and also connection timeout) in microseconds
+    /// Set socket write timeout in microseconds
     pub fn setWriteTimeout(self: *Self, write: ?u32) !void {
         std.debug.assert(write == null or write.? != 0);
         const micros = write orelse 0;

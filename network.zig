@@ -371,22 +371,30 @@ pub const Socket = struct {
     pub fn setReadTimeout(self: *Self, read: ?u32) !void {
         std.debug.assert(read == null or read.? != 0);
         const micros = read orelse 0;
-        const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
-        var read_timeout: std.os.timeval = undefined;
-        read_timeout.tv_sec = @intCast(@TypeOf(read_timeout.tv_sec), @divTrunc(micros, 1000000));
-        read_timeout.tv_usec = @intCast(@TypeOf(read_timeout.tv_usec), @mod(micros, 1000000));
-        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
+        if (is_windows) {
+            var val : u32 = @divTrunc(micros, 1000);
+            try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&val));
+        } else {
+            var read_timeout: std.os.timeval = undefined;
+            read_timeout.tv_sec = @divTrunc(micros, 1000000);
+            read_timeout.tv_usec = @mod(micros, 1000000);
+            try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
+        }
     }
 
     /// Set socket write timeout (and also connection timeout) in microseconds
     pub fn setWriteTimeout(self: *Self, write: ?u32) !void {
         std.debug.assert(write == null or write.? != 0);
         const micros = write orelse 0;
-        const setsockopt_fn = if (is_windows) windows.setsockopt else std.os.setsockopt;
-        var write_timeout: std.os.timeval = undefined;
-        write_timeout.tv_sec = @intCast(@TypeOf(write_timeout.tv_sec), @divTrunc(micros, 1000000));
-        write_timeout.tv_usec = @intCast(@TypeOf(write_timeout.tv_usec), @mod(micros, 1000000));
-        try setsockopt_fn(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
+        if (is_windows) {
+            var val : u32 = @divTrunc(micros, 1000);
+            try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.asBytes(&val));
+        } else {
+            var write_timeout: std.os.timeval = undefined;
+            write_timeout.tv_sec = @divTrunc(micros, 1000000);
+            write_timeout.tv_usec = @mod(micros, 1000000);
+            try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
+        }
     }
 
     /// Connects the UDP or TCP socket to a remote server.
@@ -1268,8 +1276,7 @@ const windows = struct {
                 .WSAENETUNREACH => error.NetworkUnreachable,
                 .WSAEHOSTUNREACH => error.NetworkUnreachable,
                 .WSAENOTSOCK => unreachable,
-                .WSAETIMEDOUT => error.ConnectionTimedOut,
-                .WSAEWOULDBLOCK => error.WouldBlock,
+                .WSAEWOULDBLOCK, .WSAETIMEDOUT => error.WouldBlock,
                 else => |err| return unexpectedWSAError(err),
             };
         } else return;
@@ -1353,6 +1360,7 @@ const windows = struct {
                     .WSAENOTCONN => unreachable,
                     .WSAENOTSOCK => unreachable,
                     .WSAEOPNOTSUPP => unreachable,
+                    .WSAETIMEDOUT => error.WouldBlock,
                     else => |err| return unexpectedWSAError(err),
                 };
             }
@@ -1435,7 +1443,7 @@ const windows = struct {
                     .WSAENOTSOCK => unreachable,
                     .WSAESHUTDOWN => unreachable,
                     .WSAEOPNOTSUPP => unreachable,
-                    .WSAEWOULDBLOCK => error.WouldBlock,
+                    .WSAETIMEDOUT, .WSAEWOULDBLOCK => error.WouldBlock,
                     .WSAEINTR => continue,
                     else => |err| return unexpectedWSAError(err),
                 };

@@ -372,7 +372,7 @@ pub const Socket = struct {
         std.debug.assert(read == null or read.? != 0);
         const micros = read orelse 0;
         if (is_windows) {
-            var val : u32 = @divTrunc(micros, 1000);
+            var val: u32 = @divTrunc(micros, 1000);
             try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&val));
         } else {
             var read_timeout: std.os.timeval = undefined;
@@ -387,7 +387,7 @@ pub const Socket = struct {
         std.debug.assert(write == null or write.? != 0);
         const micros = write orelse 0;
         if (is_windows) {
-            var val : u32 = @divTrunc(micros, 1000);
+            var val: u32 = @divTrunc(micros, 1000);
             try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.asBytes(&val));
         } else {
             var write_timeout: std.os.timeval = undefined;
@@ -459,15 +459,14 @@ pub const Socket = struct {
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
         return try send_fn(self.internal, data, flags);
     }
-    
+
     /// Non-Blockingly peeks at data from the connected peer.
     /// Will not change the stream state.
     pub fn peek(self: Self, data: []u8) ReceiveError!usize {
         const recvfrom_fn = if (is_windows) windows.recvfrom else std.os.recvfrom;
         const flags = if (is_windows) 0x2 else std.os.linux.MSG.PEEK;
-        return try recvfrom_fn(self.internal, data, flags, null, null);   
+        return try recvfrom_fn(self.internal, data, flags, null, null);
     }
-
 
     /// Blockingly receives some data from the connected peer.
     /// Will read all available data from the TCP stream or

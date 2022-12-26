@@ -43,3 +43,8 @@ jobs:
         # if: ${{ matrix.platform != 'windows-latest' }}
         run: |
           zig build discovery-examples
+
+      - name: Compile and test udp
+        run: |
+          zig build udp-broadcast
+

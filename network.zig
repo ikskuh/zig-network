@@ -397,6 +397,18 @@ pub const Socket = struct {
         }
     }
 
+    /// Sets the SO_BROADCAST socket option to enable/disable UDP broadcast. Only supported for IPv4.
+    pub fn setBroadcast(self: *Self, enable: bool) !void {
+        std.debug.assert(self.family == .ipv4);
+
+        const val: u32 = if (enable) 1 else 0;
+        if (is_windows) {
+            try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.BROADCAST, std.mem.asBytes(&val));
+        } else {
+            try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.BROADCAST, std.mem.asBytes(&val));
+        }
+    }
+
     /// Connects the UDP or TCP socket to a remote server.
     /// The `target` address type must fit the address type of the socket.
     pub fn connect(self: *Self, target: EndPoint) !void {

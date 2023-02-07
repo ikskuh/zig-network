@@ -1,50 +1,69 @@
 const std = @import("std");
 
-const pkgs = struct {
-    const network = std.build.Pkg{
-        .name = "network",
-        .source = .{ .path = "network.zig" },
-    };
-};
-
 pub fn build(b: *std.build.Builder) !void {
-    const mode = b.standardReleaseOptions();
     const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-    var test_runner = b.addTest("testsuite.zig");
-    test_runner.addPackage(pkgs.network);
-    test_runner.setBuildMode(mode);
-    test_runner.setTarget(target);
+    b.addModule(.{
+        .name = "network",
+        .source_file = .{ .path = "network.zig" },
+    });
+    const module = b.modules.get("network").?;
 
-    const async_example = b.addExecutable("async", "examples/async.zig");
-    async_example.setBuildMode(mode);
-    async_example.setTarget(target);
-    async_example.addPackage(pkgs.network);
+    var test_runner = b.addTest(.{
+        .root_source_file = .{ .path = "testsuite.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    test_runner.addModule("network", module);
 
-    const echo_example = b.addExecutable("echo", "examples/echo.zig");
-    echo_example.setBuildMode(mode);
-    echo_example.setTarget(target);
-    echo_example.addPackage(pkgs.network);
+    const async_example = b.addExecutable(.{
+        .name = "async",
+        .root_source_file = .{ .path = "examples/async.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    async_example.addModule("network", module);
 
-    const udp_example = b.addExecutable("udp", "examples/multicast_udp.zig");
-    udp_example.setBuildMode(mode);
-    udp_example.setTarget(target);
-    udp_example.addPackage(pkgs.network);
+    const echo_example = b.addExecutable(.{
+        .name = "echo",
+        .root_source_file = .{ .path = "examples/echo.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    echo_example.addModule("network", module);
 
-    const udp_broadcast = b.addExecutable("broadcast", "examples/udp_broadcast.zig");
-    udp_broadcast.setBuildMode(mode);
-    udp_broadcast.setTarget(target);
-    udp_broadcast.addPackage(pkgs.network);
+    const udp_example = b.addExecutable(.{
+        .name = "udp",
+        .root_source_file = .{ .path = "examples/multicast_udp.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    udp_example.addModule("network", module);
 
-    const discovery_client = b.addExecutable("discovery_client", "examples/discovery/client.zig");
-    discovery_client.setBuildMode(mode);
-    discovery_client.setTarget(target);
-    discovery_client.addPackage(pkgs.network);
+    const udp_broadcast_example = b.addExecutable(.{
+        .name = "udp_broadcast",
+        .root_source_file = .{ .path = "examples/udp_broadcast.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    udp_broadcast_example.addModule("network", module);
 
-    const discovery_server = b.addExecutable("discovery_server", "examples/discovery/server.zig");
-    discovery_server.setBuildMode(mode);
-    discovery_server.setTarget(target);
-    discovery_server.addPackage(pkgs.network);
+    const discovery_client = b.addExecutable(.{
+        .name = "discovery_client",
+        .root_source_file = .{ .path = "examples/discovery/client.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    discovery_client.addModule("network", module);
+
+    const discovery_server = b.addExecutable(.{
+        .name = "discovery_server",
+        .root_source_file = .{ .path = "examples/discovery/server.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    discovery_server.addModule("network", module);
 
     const test_step = b.step("test", "Runs the test suite.");
     test_step.dependOn(&test_runner.step);
@@ -59,7 +78,7 @@ pub fn build(b: *std.build.Builder) !void {
     udp_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
 
     const udp_broadcast_step = b.step("udp-broadcast", "Builds UDP broadcast example");
-    udp_broadcast_step.dependOn(&b.addInstallArtifact(udp_broadcast).step);
+    udp_broadcast_step.dependOn(&b.addInstallArtifact(udp_broadcast_example).step);
 
     const discovery_examples_step = b.step("discovery-examples", "Builds UDP/TCP Server Discovery examples");
     discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);

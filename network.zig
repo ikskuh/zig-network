@@ -133,7 +133,7 @@ pub const Address = union(AddressFamily) {
                 .Big => big_endian_parts.*,
                 .Little => blk: {
                     var buf: [8]u16 = undefined;
-                    for (big_endian_parts) |part, i| {
+                    for (big_endian_parts, 0..) |part, i| {
                         buf[i] = std.mem.bigToNative(u16, part);
                     }
                     break :blk buf;
@@ -721,7 +721,7 @@ const LinuxOSLogic = struct {
     }
 
     inline fn remove(self: *Self, sock: Socket) void {
-        const index = for (self.fds.items) |item, i| {
+        const index = for (self.fds.items, 0..) |item, i| {
             if (item.fd == sock.internal)
                 break i;
         } else null;
@@ -886,13 +886,13 @@ const WindowsOSLogic = struct {
     }
 
     inline fn remove(self: *Self, sock: Socket) void {
-        for (self.read_fds.items) |fd, idx| {
+        for (self.read_fds.items, 0..) |fd, idx| {
             if (fd == sock.internal) {
                 _ = self.read_fds.swapRemove(idx);
                 break;
             }
         }
-        for (self.write_fds.items) |fd, idx| {
+        for (self.write_fds.items, 0..) |fd, idx| {
             if (fd == sock.internal) {
                 _ = self.write_fds.swapRemove(idx);
                 break;

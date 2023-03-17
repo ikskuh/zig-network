@@ -85,7 +85,7 @@ pub fn build(b: *std.build.Builder) !void {
 
     const all_examples_step = b.step("examples", "Builds all examples");
     all_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
-    // TODO: uncommen once async is implemented
+    // TODO: uncomment once async is implemented
     // all_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
     all_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
     all_examples_step.dependOn(&b.addInstallArtifact(udp_broadcast_example).step);

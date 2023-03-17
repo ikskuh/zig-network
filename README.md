@@ -30,10 +30,23 @@ See [async.zig](examples/async.zig) for a more complete example on how to use as
 
 ## Run examples
 
+Build all examples:
+
 ```bash
 $ zig build examples
-$ ./zig-cache/bin/echo 3000
 ```
+
+Build a specific example:
+
+```bash
+$ zig build sync-examples
+```
+
+To test an example, eg. `echo`:
+
+```bash
+$ ./zig-out/bin/echo 3000
+``` 
 
 in another terminal
 

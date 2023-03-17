@@ -4,10 +4,9 @@ pub fn build(b: *std.build.Builder) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    _ = b.addModule("network", .{
+    const module = b.addModule("network", .{
         .source_file = .{ .path = "network.zig" },
     });
-    const module = b.modules.get("network").?;
 
     var test_runner = b.addTest(.{
         .root_source_file = .{ .path = "testsuite.zig" },

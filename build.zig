@@ -4,11 +4,9 @@ pub fn build(b: *std.build.Builder) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    b.addModule(.{
-        .name = "network",
+    const module = b.addModule("network", .{
         .source_file = .{ .path = "network.zig" },
     });
-    const module = b.modules.get("network").?;
 
     var test_runner = b.addTest(.{
         .root_source_file = .{ .path = "testsuite.zig" },
@@ -83,4 +81,13 @@ pub fn build(b: *std.build.Builder) !void {
     const discovery_examples_step = b.step("discovery-examples", "Builds UDP/TCP Server Discovery examples");
     discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
     discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
+
+    const all_examples_step = b.step("examples", "Builds all examples");
+    all_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
+    // TODO: uncomment once async is implemented
+    // all_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(udp_broadcast_example).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
 }

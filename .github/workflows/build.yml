@@ -29,10 +29,10 @@ jobs:
         run: |
           zig build test install sync-examples
 
-#      - name: Compile and test asynchronous
-#        # if: ${{ matrix.platform != 'windows-latest' }}
-#        run: |
-#          zig build async-examples
+      #      - name: Compile and test asynchronous
+      #        # if: ${{ matrix.platform != 'windows-latest' }}
+      #        run: |
+      #          zig build async-examples
 
       - name: Compile and test udp
         # if: ${{ matrix.platform != 'windows-latest' }}
@@ -47,4 +47,3 @@ jobs:
       - name: Compile and test udp broadcast
         run: |
           zig build udp-broadcast
-

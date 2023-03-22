@@ -1088,9 +1088,9 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
             .next = null,
         };
 
-        var res: *addrinfo = undefined;
+        var res: ?*addrinfo = undefined;
         try getaddrinfo_fn(name_c.ptr, @ptrCast([*:0]const u8, port_c.ptr), &hints, &res);
-        defer freeaddrinfo_fn(res);
+        defer if (res) |r| freeaddrinfo_fn(r);
 
         const addr_count = blk: {
             var count: usize = 0;
@@ -1186,7 +1186,7 @@ fn libc_getaddrinfo(
     name: [*:0]const u8,
     port: [*:0]const u8,
     hints: *const std.os.addrinfo,
-    result: **std.os.addrinfo,
+    result: *?*std.os.addrinfo,
 ) GetAddrInfoError!void {
     const rc = std.os.system.getaddrinfo(name, port, hints, result);
     if (rc != @intToEnum(std.os.system.EAI, 0))
@@ -1581,9 +1581,9 @@ const windows = struct {
         name: [*:0]const u8,
         port: [*:0]const u8,
         hints: *const addrinfo,
-        result: **addrinfo,
+        result: *?*addrinfo,
     ) GetAddrInfoError!void {
-        const rc = funcs.getaddrinfo(name, port, hints, result);
+        const rc = funcs.getaddrinfo(name, port, hints, @ptrCast(**addrinfo, result));
         if (rc != 0)
             return switch (ws2_32.WSAGetLastError()) {
                 .WSATRY_AGAIN => error.TemporaryNameServerFailure,

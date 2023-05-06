@@ -64,7 +64,10 @@ pub fn build(b: *std.build.Builder) !void {
     discovery_server.addModule("network", module);
 
     const test_step = b.step("test", "Runs the test suite.");
-    test_step.dependOn(&test_runner.run().step);
+    var run = b.addRunArtifact(test_runner);
+
+    test_step.dependOn(&run.step);
+    
 
     const sync_examples_step = b.step("sync-examples", "Builds the examples");
     sync_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);

@@ -981,7 +981,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
         },
         .linux, .macos, .ios, .watchos, .tvos => return try std.os.poll(
             set.internal.fds.items,
-            if (timeout) |val| @intCast(i32, (val + std.time.ns_per_s - 1) / std.time.ns_per_s) else -1,
+            if (timeout) |val| @intCast(i32, (val + std.time.ns_per_ms - 1) / std.time.ns_per_ms) else -1,
         ),
         else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
     }

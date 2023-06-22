@@ -1189,7 +1189,7 @@ fn libc_getaddrinfo(
     result: *?*std.os.addrinfo,
 ) GetAddrInfoError!void {
     const rc = std.os.system.getaddrinfo(name, port, hints, result);
-    if (rc != @intToEnum(std.os.system.EAI, 0))
+    if (rc != @enumFromInt(std.os.system.EAI, 0))
         return switch (rc) {
             .ADDRFAMILY => return error.HostLacksNetworkAddresses,
             .AGAIN => return error.TemporaryNameServerFailure,

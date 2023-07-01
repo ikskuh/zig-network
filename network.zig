@@ -128,7 +128,7 @@ pub const Address = union(AddressFamily) {
                 });
                 return;
             }
-            const big_endian_parts = @ptrCast(*align(1) const [8]u16, &self.value);
+            const big_endian_parts: *align(1) const [8]u16 = @ptrCast(&self.value);
             const native_endian_parts = switch (builtin.target.cpu.arch.endian()) {
                 .Big => big_endian_parts.*,
                 .Little => blk: {
@@ -234,12 +234,12 @@ pub const EndPoint = struct {
             std.os.AF.INET => {
                 if (size < @sizeOf(std.os.sockaddr.in))
                     return error.InsufficientBytes;
-                const value = @ptrCast(*const std.os.sockaddr.in, @alignCast(4, src));
+                const value: *align(4) const std.os.sockaddr.in = @ptrCast(@alignCast(src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = .{
                         .ipv4 = .{
-                            .value = @bitCast([4]u8, value.addr),
+                            .value = @bitCast(value.addr),
                         },
                     },
                 };
@@ -247,7 +247,7 @@ pub const EndPoint = struct {
             std.os.AF.INET6 => {
                 if (size < @sizeOf(std.os.sockaddr.in6))
                     return error.InsufficientBytes;
-                const value = @ptrCast(*const std.os.sockaddr.in6, @alignCast(4, src));
+                const value: *align(4) const std.os.sockaddr.in6 = @ptrCast(@alignCast(src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = .{
@@ -276,7 +276,7 @@ pub const EndPoint = struct {
                 .ipv4 = .{
                     .family = std.os.AF.INET,
                     .port = std.mem.nativeToBig(u16, self.port),
-                    .addr = @bitCast(u32, addr.value),
+                    .addr = @bitCast(addr.value),
                     .zero = [_]u8{0} ** 8,
                 },
             },
@@ -341,8 +341,8 @@ pub const Socket = struct {
         const bind_fn = if (is_windows) windows.bind else std.os.bind;
 
         switch (ep.toSocketAddress()) {
-            .ipv4 => |sockaddr| try bind_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try bind_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try bind_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try bind_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
         }
     }
 
@@ -376,8 +376,8 @@ pub const Socket = struct {
             try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.asBytes(&val));
         } else {
             var read_timeout: std.os.timeval = undefined;
-            read_timeout.tv_sec = @intCast(@TypeOf(read_timeout.tv_sec), @divTrunc(micros, 1000000));
-            read_timeout.tv_usec = @intCast(@TypeOf(read_timeout.tv_usec), @mod(micros, 1000000));
+            read_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
+            read_timeout.tv_usec = @intCast(@mod(micros, 1000000));
             try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
         }
     }
@@ -391,8 +391,8 @@ pub const Socket = struct {
             try windows.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.asBytes(&val));
         } else {
             var write_timeout: std.os.timeval = undefined;
-            write_timeout.tv_sec = @intCast(@TypeOf(write_timeout.tv_sec), @divTrunc(micros, 1000000));
-            write_timeout.tv_usec = @intCast(@TypeOf(write_timeout.tv_usec), @mod(micros, 1000000));
+            write_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
+            write_timeout.tv_usec = @intCast(@mod(micros, 1000000));
             try std.os.setsockopt(self.internal, std.os.SOL.SOCKET, std.os.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
         }
     }
@@ -425,8 +425,8 @@ pub const Socket = struct {
 
         const connect_fn = if (is_windows) windows.connect else std.os.connect;
         switch (target.toSocketAddress()) {
-            .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
         }
         self.endpoint = target;
     }
@@ -450,7 +450,7 @@ pub const Socket = struct {
 
         const flags = if (is_windows) 0 else if (std.io.is_async) std.os.O.NONBLOCK else 0;
 
-        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
         errdefer close_fn(fd);
 
@@ -501,7 +501,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         const len = try recvfrom_fn(self.internal, data, flags | if (is_windows) 0 else 4, addr_ptr, &size);
 
         return ReceiveFrom{
@@ -517,8 +517,8 @@ pub const Socket = struct {
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
-            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(*const std.os.sockaddr, &sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
         };
     }
 
@@ -539,7 +539,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         try getsockname_fn(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
@@ -552,7 +552,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        var addr_ptr = @ptrCast(*std.os.sockaddr, &addr);
+        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         try getpeername_fn(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
@@ -576,8 +576,8 @@ pub const Socket = struct {
         };
 
         const request = ip_mreq{
-            .imr_multiaddr = @bitCast(u32, group.group.value),
-            .imr_address = @bitCast(u32, group.interface.value),
+            .imr_multiaddr = @bitCast(group.group.value),
+            .imr_address = @bitCast(group.interface.value),
             .imr_ifindex = 0, // this cannot be crossplatform, so we set it to zero
         };
 
@@ -775,14 +775,16 @@ const WindowsOSLogic = struct {
         // fds: SOCKET[size]
 
         fn fdSlice(self: *align(8) FdSet) []windows.ws2_32.SOCKET {
-            return @ptrCast([*]windows.ws2_32.SOCKET, @ptrCast([*]u8, self) + 4 * @sizeOf(c_uint))[0..self.size];
+            const ptr: [*]u8 = @ptrCast(self);
+            const socket_ptr: [*]windows.ws2_32.SOCKET = @ptrCast(ptr + 4 * @sizeOf(c_uint));
+            return socket_ptr[0..self.size];
         }
 
         fn make(allocator: std.mem.Allocator) !*align(8) FdSet {
             // Initialize with enough space for 8 sockets.
             var mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
 
-            var fd_set = @ptrCast(*align(8) FdSet, mem);
+            var fd_set: *align(8) FdSet = @ptrCast(mem);
             fd_set.* = .{ .capacity = 8, .size = 0 };
             return fd_set;
         }
@@ -792,7 +794,8 @@ const WindowsOSLogic = struct {
         }
 
         fn memSlice(self: *align(8) FdSet) []u8 {
-            return @ptrCast([*]u8, self)[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows.ws2_32.SOCKET))];
+            const ptr: [*]u8 = @ptrCast(self);
+            return ptr[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows.ws2_32.SOCKET))];
         }
 
         fn deinit(self: *align(8) FdSet, allocator: std.mem.Allocator) void {
@@ -810,7 +813,8 @@ const WindowsOSLogic = struct {
             if (fd_set.*.size == fd_set.*.capacity) {
                 // Double our capacity.
                 const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
-                fd_set.* = @ptrCast(*align(8) FdSet, (try allocator.reallocAdvanced(@alignCast(8, fd_set.*.memSlice()), new_mem_size, @returnAddress())).ptr);
+                const ptr: []u8 align(8) = @alignCast(fd_set.*.memSlice());
+                fd_set.* = @ptrCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr);
                 fd_set.*.capacity *= 2;
             }
 
@@ -820,7 +824,8 @@ const WindowsOSLogic = struct {
 
         fn getSelectPointer(self: *align(8) FdSet) ?[*]u8 {
             if (self.size == 0) return null;
-            return @ptrCast([*]u8, self) + 2 * @sizeOf(c_uint);
+            const ptr: [*]u8 = @ptrCast(self);
+            return ptr + 2 * @sizeOf(c_uint);
         }
     };
 
@@ -973,7 +978,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             const tm: windows.timeval = if (timeout) |tout| block: {
                 const secs = @divFloor(tout, std.time.ns_per_s);
                 const usecs = @divFloor(tout - secs * std.time.ns_per_s, 1000);
-                break :block .{ .tv_sec = @intCast(c_long, secs), .tv_usec = @intCast(c_long, usecs) };
+                break :block .{ .tv_sec = @intCast(secs), .tv_usec = @intCast(usecs) };
             } else .{ .tv_sec = 0, .tv_usec = 0 };
 
             // Windows ignores first argument.
@@ -981,7 +986,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
         },
         .linux, .macos, .ios, .watchos, .tvos => return try std.os.poll(
             set.internal.fds.items,
-            if (timeout) |val| @intCast(i32, (val + std.time.ns_per_ms - 1) / std.time.ns_per_ms) else -1,
+            if (timeout) |val| @as(i32, @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms)) else -1,
         ),
         else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
     }
@@ -1071,7 +1076,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
 
         const AI_NUMERICSERV = if (is_windows) 0x00000008 else std.c.AI.NUMERICSERV;
 
-        const name_c = try std.cstr.addNullByte(allocator, name);
+        const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
 
         const port_c = try std.fmt.allocPrint(allocator, "{}\x00", .{port});
@@ -1089,7 +1094,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         };
 
         var res: ?*addrinfo = undefined;
-        try getaddrinfo_fn(name_c.ptr, @ptrCast([*:0]const u8, port_c.ptr), &hints, &res);
+        try getaddrinfo_fn(name_c.ptr, @ptrCast(port_c.ptr), &hints, &res);
         defer if (res) |r| freeaddrinfo_fn(r);
 
         const addr_count = blk: {
@@ -1110,11 +1115,11 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
             const sockaddr = info.addr orelse continue;
             const addr: Address = switch (sockaddr.family) {
                 std.os.AF.INET => block: {
-                    const bytes = @ptrCast(*const [4]u8, sockaddr.data[2..]);
+                    const bytes: *const [4]u8 = @ptrCast(sockaddr.data[2..]);
                     break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                 },
                 std.os.AF.INET6 => block: {
-                    const sockaddr_in6 = @ptrCast(*align(1) const std.os.sockaddr.in6, sockaddr);
+                    const sockaddr_in6: *align(1) const std.os.sockaddr.in6 = @ptrCast(sockaddr);
                     break :block .{ .ipv6 = Address.IPv6.init(sockaddr_in6.addr, sockaddr_in6.scope_id) };
                 },
                 else => unreachable,
@@ -1153,7 +1158,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         for (address_list.addrs) |net_addr| {
             const addr: Address = switch (net_addr.any.family) {
                 std.os.AF.INET => block: {
-                    const bytes = @ptrCast(*const [4]u8, &net_addr.in.sa.addr);
+                    const bytes: *const [4]u8 = @ptrCast(&net_addr.in.sa.addr);
                     break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
                 },
                 std.os.AF.INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.sa.addr, net_addr.in6.sa.scope_id) },
@@ -1189,7 +1194,7 @@ fn libc_getaddrinfo(
     result: *?*std.os.addrinfo,
 ) GetAddrInfoError!void {
     const rc = std.os.system.getaddrinfo(name, port, hints, result);
-    if (rc != @enumFromInt(std.os.system.EAI, 0))
+    if (rc != @as(std.os.system.EAI, @enumFromInt(0)))
         return switch (rc) {
             .ADDRFAMILY => return error.HostLacksNetworkAddresses,
             .AGAIN => return error.TemporaryNameServerFailure,
@@ -1255,9 +1260,9 @@ const windows = struct {
 
     fn socket(addr_family: u32, socket_type: u32, protocol: u32) std.os.SocketError!ws2_32.SOCKET {
         const sock = try WSASocketW(
-            @intCast(i32, addr_family),
-            @intCast(i32, socket_type),
-            @intCast(i32, protocol),
+            @intCast(addr_family),
+            @intCast(socket_type),
+            @intCast(protocol),
             null,
             0,
             ws2_32.WSA_FLAG_OVERLAPPED,
@@ -1273,7 +1278,7 @@ const windows = struct {
 
     // @TODO Make this, listen, accept, bind etc (all but recv and sendto) asynchronous
     fn connect(sock: ws2_32.SOCKET, sock_addr: *const std.os.sockaddr, len: std.os.socklen_t) std.os.ConnectError!void {
-        while (true) if (ws2_32.connect(sock, sock_addr, @intCast(c_int, len)) != 0) {
+        while (true) if (ws2_32.connect(sock, sock_addr, @intCast(len)) != 0) {
             return switch (ws2_32.WSAGetLastError()) {
                 .WSAEACCES => error.PermissionDenied,
                 .WSAEADDRINUSE => error.AddressInUse,
@@ -1319,7 +1324,7 @@ const windows = struct {
             };
 
             var wsa_buf = Const_WSABUF{
-                .len = @intCast(ULONG, buf.len),
+                .len = @intCast(buf.len),
                 .buf = buf.ptr,
             };
 
@@ -1335,12 +1340,12 @@ const windows = struct {
             suspend {
                 _ = ws2_32.WSASendTo(
                     sock,
-                    @ptrCast([*]ws2_32.WSABUF, &wsa_buf),
+                    @ptrCast(&wsa_buf),
                     1,
                     null,
-                    @intCast(DWORD, flags),
+                    @intCast(flags),
                     dest_addr,
-                    @intCast(c_int, addrlen),
+                    @intCast(addrlen),
                     &resume_node.base.overlapped,
                     null,
                 );
@@ -1357,7 +1362,7 @@ const windows = struct {
         }
 
         while (true) {
-            const result = funcs.sendto(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), dest_addr, addrlen);
+            const result = funcs.sendto(sock, buf.ptr, @intCast(buf.len), @intCast(flags), dest_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
                 return switch (ws2_32.WSAGetLastError()) {
                     .WSAEACCES => error.AccessDenied,
@@ -1375,7 +1380,7 @@ const windows = struct {
                     else => |err| return unexpectedWSAError(err),
                 };
             }
-            return @intCast(usize, result);
+            return @intCast(result);
         }
     }
 
@@ -1398,10 +1403,10 @@ const windows = struct {
             const loop = std.event.Loop.instance.?;
 
             var wsa_buf = ws2_32.WSABUF{
-                .len = @intCast(ULONG, buf.len),
+                .len = @intCast(buf.len),
                 .buf = buf.ptr,
             };
-            var lpFlags = @intCast(DWORD, flags);
+            var lpFlags: DWORD = @intCast(flags);
 
             var resume_node = std.event.Loop.ResumeNode.Basic{
                 .base = .{
@@ -1411,7 +1416,7 @@ const windows = struct {
                 },
             };
 
-            var addrlen_converted: i32 = if (addrlen) |val| @intCast(i32, val.*) else undefined;
+            var addrlen_converted: i32 = if (addrlen) |val| @intCast(val.*) else undefined;
 
             loop.beginOneEvent();
             suspend {
@@ -1429,7 +1434,7 @@ const windows = struct {
             }
 
             if (addrlen) |val| {
-                val.* = @intCast(u32, addrlen_converted);
+                val.* = @intCast(addrlen_converted);
             }
 
             var bytes_transferred: DWORD = undefined;
@@ -1445,7 +1450,7 @@ const windows = struct {
         }
 
         while (true) {
-            const result = funcs.recvfrom(sock, buf.ptr, @intCast(c_int, buf.len), @intCast(c_int, flags), src_addr, addrlen);
+            const result = funcs.recvfrom(sock, buf.ptr, @intCast(buf.len), @intCast(flags), src_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
                 return switch (ws2_32.WSAGetLastError()) {
                     .WSAEFAULT => unreachable,
@@ -1459,7 +1464,7 @@ const windows = struct {
                     else => |err| return unexpectedWSAError(err),
                 };
             }
-            return @intCast(usize, result);
+            return @intCast(result);
         }
     }
 
@@ -1471,7 +1476,7 @@ const windows = struct {
     } || std.os.UnexpectedError;
 
     fn listen(sock: ws2_32.SOCKET, backlog: u32) ListenError!void {
-        const rc = funcs.listen(sock, @intCast(c_int, backlog));
+        const rc = funcs.listen(sock, @intCast(backlog));
         if (rc != 0) {
             return switch (ws2_32.WSAGetLastError()) {
                 .WSAEADDRINUSE => error.AddressInUse,
@@ -1517,7 +1522,7 @@ const windows = struct {
     }
 
     fn setsockopt(sock: ws2_32.SOCKET, level: u32, optname: u32, opt: []const u8) std.os.SetSockOptError!void {
-        if (funcs.setsockopt(sock, @intCast(c_int, level), @intCast(c_int, optname), opt.ptr, @intCast(c_int, opt.len)) != 0) {
+        if (funcs.setsockopt(sock, @intCast(level), @intCast(optname), opt.ptr, @intCast(opt.len)) != 0) {
             return switch (ws2_32.WSAGetLastError()) {
                 .WSAENOTSOCK => unreachable,
                 .WSAEINVAL => unreachable,
@@ -1559,7 +1564,7 @@ const windows = struct {
                     else => |err| return unexpectedWSAError(err),
                 };
             }
-            return @intCast(usize, result);
+            return @intCast(result);
         }
     }
 
@@ -1583,7 +1588,7 @@ const windows = struct {
         hints: *const addrinfo,
         result: *?*addrinfo,
     ) GetAddrInfoError!void {
-        const rc = funcs.getaddrinfo(name, port, hints, @ptrCast(**addrinfo, result));
+        const rc = funcs.getaddrinfo(name, port, hints, @ptrCast(result));
         if (rc != 0)
             return switch (ws2_32.WSAGetLastError()) {
                 .WSATRY_AGAIN => error.TemporaryNameServerFailure,

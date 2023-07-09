@@ -47,3 +47,7 @@ jobs:
       - name: Compile and test udp broadcast
         run: |
           zig build udp-broadcast
+      
+      - name: Compile and test ntp client
+        run: |
+          zig build ntp-client

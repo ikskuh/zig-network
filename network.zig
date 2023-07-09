@@ -1268,6 +1268,27 @@ const windows = struct {
             ws2_32.WSA_FLAG_OVERLAPPED,
         );
 
+        // Disable SIO_UDP_CONNRESET behaviour for UDP
+        //
+        // This resolves an issue where recvfrom can sometimes return a WSAECONNRESET error
+        // https://github.com/MasterQ32/zig-network/issues/66
+        if (socket_type == std.os.SOCK.DGRAM) {
+            // This was based off the following Go code:
+            // https://github.com/golang/go/blob/5c154986094bcc2fb28909cc5f01c9ba1dd9ddd4/src/internal/poll/fd_windows.go#L338
+            const IOC_IN = 0x80000000;
+            const IOC_VENDOR = 0x18000000;
+            const SIO_UDP_CONNRESET = IOC_IN | IOC_VENDOR | 12;
+            var flag = &[_]u8{ 0, 0, 0, 0 };
+            var ret: u32 = 0;
+            switch (ws2_32.WSAIoctl(sock, SIO_UDP_CONNRESET, flag.ptr, flag.len, null, 0, &ret, null, null)) {
+                0 => {},
+                ws2_32.SOCKET_ERROR => switch (ws2_32.WSAGetLastError()) {
+                    else => |err| return unexpectedWSAError(err),
+                },
+                else => unreachable,
+            }
+        }
+
         if (std.io.is_async and std.event.Loop.instance != null) {
             const loop = std.event.Loop.instance.?;
             _ = try CreateIoCompletionPort(sock, loop.os_data.io_port, undefined, undefined);

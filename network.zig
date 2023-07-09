@@ -1270,7 +1270,8 @@ const windows = struct {
 
         // Disable SIO_UDP_CONNRESET behaviour for UDP
         //
-        // This resolves an issue where recvfrom can sometimes return a WSAECONNRESET error
+        // This resolves an issue where "recvfrom" can return a WSAECONNRESET error if a previous send
+        // call failed and resulted in an ICMP Port Unreachable message.
         // https://github.com/MasterQ32/zig-network/issues/66
         if (socket_type == std.os.SOCK.DGRAM) {
             // This was based off the following Go code:

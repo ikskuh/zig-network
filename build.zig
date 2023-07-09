@@ -63,11 +63,18 @@ pub fn build(b: *std.build.Builder) !void {
     });
     discovery_server.addModule("network", module);
 
+    const ntp_client = b.addExecutable(.{
+        .name = "ntp_client",
+        .root_source_file = .{ .path = "examples/ntp_client.zig" },
+        .target = target,
+        .optimize = optimize,
+    });
+    ntp_client.addModule("network", module);
+
     const test_step = b.step("test", "Runs the test suite.");
     var run = b.addRunArtifact(test_runner);
 
     test_step.dependOn(&run.step);
-    
 
     const sync_examples_step = b.step("sync-examples", "Builds the examples");
     sync_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
@@ -85,6 +92,9 @@ pub fn build(b: *std.build.Builder) !void {
     discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
     discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
 
+    const ntp_example_step = b.step("ntp-client", "Builds NTP client example");
+    ntp_example_step.dependOn(&b.addInstallArtifact(ntp_client).step);
+
     const all_examples_step = b.step("examples", "Builds all examples");
     all_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
     // TODO: uncomment once async is implemented
@@ -93,4 +103,5 @@ pub fn build(b: *std.build.Builder) !void {
     all_examples_step.dependOn(&b.addInstallArtifact(udp_broadcast_example).step);
     all_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
     all_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(ntp_client).step);
 }

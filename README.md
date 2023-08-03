@@ -35,6 +35,8 @@ exe.addModule("network", b.dependency("network", .{}).module("network"));
 ### Usage example
 
 ```zig
+const network = @import("network");
+
 test "Connect to an echo server" {
     try network.init();
     defer network.deinit();

@@ -8,7 +8,31 @@ Small network abstraction layer around TCP & UDP.
 - Supports blocking and non-blocking I/O via `select`/`poll`
 - UDP multicast support
 
-## Usage Example
+## Usage
+
+### Use with the package manager
+
+`build.zig.zon`:
+```zig
+.{
+    .name = "appname",
+    .version = "0.0.0",
+    .dependencies = .{
+        .network = .{
+            .url = "https://github.com/MasterQ32/zig-network/archive/<COMMIT_HASH_HERE>.tar.gz",
+            .hash = "HASH_GOES_HERE",
+        },
+    },
+}
+```
+(To aquire the hash, please remove the line containing `.hash`, the compiler will then tell you which line to put back)
+
+`build.zig`:
+```zig
+exe.addModule("network", b.dependency("network", .{}).module("network"));
+```
+
+### Usage example
 
 ```zig
 test "Connect to an echo server" {

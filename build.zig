@@ -77,31 +77,31 @@ pub fn build(b: *std.build.Builder) !void {
     test_step.dependOn(&run.step);
 
     const sync_examples_step = b.step("sync-examples", "Builds the examples");
-    sync_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
+    sync_examples_step.dependOn(&b.addInstallArtifact(echo_example, .{}).step);
 
     const async_examples_step = b.step("async-examples", "Builds the examples");
-    async_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
+    async_examples_step.dependOn(&b.addInstallArtifact(async_example, .{}).step);
 
     const udp_examples_step = b.step("udp-examples", "Builds UDP examples");
-    udp_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
+    udp_examples_step.dependOn(&b.addInstallArtifact(udp_example, .{}).step);
 
     const udp_broadcast_step = b.step("udp-broadcast", "Builds UDP broadcast example");
-    udp_broadcast_step.dependOn(&b.addInstallArtifact(udp_broadcast_example).step);
+    udp_broadcast_step.dependOn(&b.addInstallArtifact(udp_broadcast_example, .{}).step);
 
     const discovery_examples_step = b.step("discovery-examples", "Builds UDP/TCP Server Discovery examples");
-    discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
-    discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
+    discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_client, .{}).step);
+    discovery_examples_step.dependOn(&b.addInstallArtifact(discovery_server, .{}).step);
 
     const ntp_example_step = b.step("ntp-client", "Builds NTP client example");
-    ntp_example_step.dependOn(&b.addInstallArtifact(ntp_client).step);
+    ntp_example_step.dependOn(&b.addInstallArtifact(ntp_client, .{}).step);
 
     const all_examples_step = b.step("examples", "Builds all examples");
-    all_examples_step.dependOn(&b.addInstallArtifact(echo_example).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(echo_example, .{}).step);
     // TODO: uncomment once async is implemented
     // all_examples_step.dependOn(&b.addInstallArtifact(async_example).step);
-    all_examples_step.dependOn(&b.addInstallArtifact(udp_example).step);
-    all_examples_step.dependOn(&b.addInstallArtifact(udp_broadcast_example).step);
-    all_examples_step.dependOn(&b.addInstallArtifact(discovery_client).step);
-    all_examples_step.dependOn(&b.addInstallArtifact(discovery_server).step);
-    all_examples_step.dependOn(&b.addInstallArtifact(ntp_client).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(udp_example, .{}).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(udp_broadcast_example, .{}).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(discovery_client, .{}).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(discovery_server, .{}).step);
+    all_examples_step.dependOn(&b.addInstallArtifact(ntp_client, .{}).step);
 }

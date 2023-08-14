@@ -120,3 +120,33 @@ test "Windows-only, fix UDP WSAECONNRESET error when calling recvfrom after send
         },
     };
 }
+
+test "parse + json parse" {
+    const json_string =
+        \\{
+        \\  "ipv4": "127.0.0.1",
+        \\  "address": "10.0.0.1",
+        \\  "endpoint": "8.8.4.4:53"
+        \\}
+    ;
+
+    const Wrapper = struct {
+        ipv4: network.Address.IPv4,
+        address: network.Address,
+        endpoint: network.EndPoint,
+    };
+
+    const wrapper = try std.json.parseFromSliceLeaky(
+        Wrapper,
+        std.testing.allocator, // our address parser does not leak
+        json_string,
+        .{},
+    );
+
+    try std.testing.expectEqual(network.Address.IPv4.init(127, 0, 0, 1), wrapper.ipv4);
+    try std.testing.expectEqual(network.Address{ .ipv4 = network.Address.IPv4.init(10, 0, 0, 1) }, wrapper.address);
+    try std.testing.expectEqual(network.EndPoint{
+        .address = .{ .ipv4 = network.Address.IPv4.init(8, 8, 4, 4) },
+        .port = 53,
+    }, wrapper.endpoint);
+}

@@ -52,7 +52,7 @@ pub const Address = union(AddressFamily) {
 
         const str = try std.json.innerParse([]const u8, fba.allocator(), source, options);
 
-        return try parse(str);
+        return parse(str) catch return error.UnexpectedToken;
     }
 
     pub const IPv4 = struct {
@@ -124,7 +124,7 @@ pub const Address = union(AddressFamily) {
 
             const str = try std.json.innerParse([]const u8, fba.allocator(), source, options);
 
-            return try IPv4.parse(str);
+            return IPv4.parse(str) catch return error.UnexpectedToken;
         }
     };
 
@@ -271,7 +271,7 @@ pub const EndPoint = struct {
 
         const str = try std.json.innerParse([]const u8, fba.allocator(), source, options);
 
-        return try parse(str);
+        return parse(str) catch return error.UnexpectedToken;
     }
 
     pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -1679,33 +1679,3 @@ const windows = struct {
             };
     }
 };
-
-test "parse + json parse" {
-    const json_string =
-        \\{
-        \\  "ipv4": "127.0.0.1",
-        \\  "address": "10.0.0.1",
-        \\  "endpoint": "8.8.4.4:53"
-        \\}
-    ;
-
-    const Wrapper = struct {
-        ipv4: Address.IPv4,
-        address: Address,
-        endpoint: EndPoint,
-    };
-
-    const wrapper = try std.json.parseFromSliceLeaky(
-        Wrapper,
-        std.testing.allocator(), // our address parser does not leak
-        json_string,
-        .{},
-    );
-
-    try std.testing.expectEqual(Address.IPv4.init(127, 0, 0, 1), wrapper.ipv4);
-    try std.testing.expectEqual(Address{ .ipv4 = Address.IPv4.init(127, 0, 0, 1) }, wrapper.address);
-    try std.testing.expectEqual(EndPoint{
-        .address = Address.IPv4.init(8, 8, 4, 4),
-        .port = 53,
-    }, wrapper.endpoint);
-}

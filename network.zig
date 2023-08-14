@@ -36,6 +36,14 @@ pub const Address = union(AddressFamily) {
     ipv4: IPv4,
     ipv6: IPv6,
 
+    pub fn parse(string: []const u8) !Address {
+        return if (Address.IPv4.parse(string)) |ip|
+            Address{ .ipv4 = ip }
+            // TODO: Implement IPv6 parsing
+        else |_|
+            return error.InvalidFormat;
+    }
+
     pub const IPv4 = struct {
         const Self = @This();
 
@@ -219,6 +227,19 @@ pub const EndPoint = struct {
 
     address: Address,
     port: u16, // Stored as native, will convert to bigEndian when moving to sockaddr
+
+    pub fn parse(string: []const u8) !EndPoint {
+        const colon_index = std.mem.indexOfScalar(u8, string, ':') orelse return error.InvalidFormat;
+
+        const address = try Address.parse(string[0..colon_index]);
+
+        const port = try std.fmt.parseInt(u16, string[colon_index + 1 ..], 10);
+
+        return EndPoint{
+            .address = address,
+            .port = port,
+        };
+    }
 
     pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
         _ = fmt;

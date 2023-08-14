@@ -44,6 +44,17 @@ pub const Address = union(AddressFamily) {
             return error.InvalidFormat;
     }
 
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Address {
+        _ = allocator;
+
+        var buffer: [256]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&buffer);
+
+        const str = try std.json.innerParse([]const u8, fba.allocator(), source, options);
+
+        return try parse(str);
+    }
+
     pub const IPv4 = struct {
         const Self = @This();
 
@@ -103,6 +114,17 @@ pub const Address = union(AddressFamily) {
                 std.mem.writeIntBig(u32, &ip.value, int);
             }
             return ip;
+        }
+
+        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !IPv4 {
+            _ = allocator;
+
+            var buffer: [256]u8 = undefined;
+            var fba = std.heap.FixedBufferAllocator.init(&buffer);
+
+            const str = try std.json.innerParse([]const u8, fba.allocator(), source, options);
+
+            return try IPv4.parse(str);
         }
     };
 
@@ -239,6 +261,17 @@ pub const EndPoint = struct {
             .address = address,
             .port = port,
         };
+    }
+
+    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !EndPoint {
+        _ = allocator;
+
+        var buffer: [256]u8 = undefined;
+        var fba = std.heap.FixedBufferAllocator.init(&buffer);
+
+        const str = try std.json.innerParse([]const u8, fba.allocator(), source, options);
+
+        return try parse(str);
     }
 
     pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
@@ -1646,3 +1679,33 @@ const windows = struct {
             };
     }
 };
+
+test "parse + json parse" {
+    const json_string =
+        \\{
+        \\  "ipv4": "127.0.0.1",
+        \\  "address": "10.0.0.1",
+        \\  "endpoint": "8.8.4.4:53"
+        \\}
+    ;
+
+    const Wrapper = struct {
+        ipv4: Address.IPv4,
+        address: Address,
+        endpoint: EndPoint,
+    };
+
+    const wrapper = try std.json.parseFromSliceLeaky(
+        Wrapper,
+        std.testing.allocator(), // our address parser does not leak
+        json_string,
+        .{},
+    );
+
+    try std.testing.expectEqual(Address.IPv4.init(127, 0, 0, 1), wrapper.ipv4);
+    try std.testing.expectEqual(Address{ .ipv4 = Address.IPv4.init(127, 0, 0, 1) }, wrapper.address);
+    try std.testing.expectEqual(EndPoint{
+        .address = Address.IPv4.init(8, 8, 4, 4),
+        .port = 53,
+    }, wrapper.endpoint);
+}

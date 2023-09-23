@@ -830,7 +830,7 @@ const WindowsOSLogic = struct {
 
         fn fdSlice(self: *align(8) FdSet) []windows.ws2_32.SOCKET {
             const ptr: [*]u8 = @ptrCast(self);
-            const socket_ptr: [*]windows.ws2_32.SOCKET = @ptrCast(ptr + 4 * @sizeOf(c_uint));
+            const socket_ptr: [*]windows.ws2_32.SOCKET = @alignCast(@ptrCast(ptr + 4 * @sizeOf(c_uint)));
             return socket_ptr[0..self.size];
         }
 
@@ -853,7 +853,8 @@ const WindowsOSLogic = struct {
         }
 
         fn deinit(self: *align(8) FdSet, allocator: std.mem.Allocator) void {
-            allocator.free(self.memSlice());
+            const ptr: []align(8) u8 = @alignCast(self.memSlice());
+            allocator.free(ptr);
         }
 
         fn containsFd(self: *align(8) FdSet, fd: windows.ws2_32.SOCKET) bool {
@@ -868,7 +869,7 @@ const WindowsOSLogic = struct {
                 // Double our capacity.
                 const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
                 const ptr: []u8 align(8) = @alignCast(fd_set.*.memSlice());
-                fd_set.* = @ptrCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr);
+                fd_set.* = @alignCast(@ptrCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr));
                 fd_set.*.capacity *= 2;
             }
 

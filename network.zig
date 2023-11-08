@@ -104,14 +104,14 @@ pub const Address = union(AddressFamily) {
                 ip.value[0] = try std.fmt.parseInt(u8, d0, 10);
                 ip.value[1] = try std.fmt.parseInt(u8, d1.?, 10);
                 const int = try std.fmt.parseInt(u16, d2.?, 10);
-                std.mem.writeIntBig(u16, ip.value[2..4], int);
+                std.mem.writeInt(u16, ip.value[2..4], int, .big);
             } else if (d1 != null) {
                 ip.value[0] = try std.fmt.parseInt(u8, d0, 10);
                 const int = try std.fmt.parseInt(u24, d1.?, 10);
-                std.mem.writeIntBig(u24, ip.value[1..4], int);
+                std.mem.writeInt(u24, ip.value[1..4], int, .big);
             } else {
                 const int = try std.fmt.parseInt(u32, d0, 10);
-                std.mem.writeIntBig(u32, &ip.value, int);
+                std.mem.writeInt(u32, &ip.value, int, .big);
             }
             return ip;
         }

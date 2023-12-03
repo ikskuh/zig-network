@@ -89,10 +89,10 @@ pub const Address = union(AddressFamily) {
         pub fn parse(string: []const u8) !IPv4 {
             var dot_it = std.mem.split(u8, string, ".");
 
-            var d0 = dot_it.next().?; // is always != null
-            var d1 = dot_it.next();
-            var d2 = dot_it.next();
-            var d3 = dot_it.next();
+            const d0 = dot_it.next().?; // is always != null
+            const d1 = dot_it.next();
+            const d2 = dot_it.next();
+            const d3 = dot_it.next();
 
             var ip = IPv4{ .value = undefined };
             if (d3 != null) {
@@ -504,7 +504,7 @@ pub const Socket = struct {
 
         const flags = if (is_windows) 0 else if (std.io.is_async) std.os.O.NONBLOCK else 0;
 
-        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
+        const addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
         errdefer close_fn(fd);
 
@@ -555,7 +555,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
+        const addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         const len = try recvfrom_fn(self.internal, data, flags | if (is_windows) 0 else 4, addr_ptr, &size);
 
         return ReceiveFrom{
@@ -593,7 +593,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
+        const addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         try getsockname_fn(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
@@ -606,7 +606,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 align(4) = undefined;
         var size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        var addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
+        const addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         try getpeername_fn(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
@@ -836,9 +836,9 @@ const WindowsOSLogic = struct {
 
         fn make(allocator: std.mem.Allocator) !*align(8) FdSet {
             // Initialize with enough space for 8 sockets.
-            var mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
+            const mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
 
-            var fd_set: *align(8) FdSet = @ptrCast(mem);
+            const fd_set: *align(8) FdSet = @ptrCast(mem);
             fd_set.* = .{ .capacity = 8, .size = 0 };
             return fd_set;
         }
@@ -1334,7 +1334,7 @@ const windows = struct {
             const IOC_IN = 0x80000000;
             const IOC_VENDOR = 0x18000000;
             const SIO_UDP_CONNRESET = IOC_IN | IOC_VENDOR | 12;
-            var flag = &[_]u8{ 0, 0, 0, 0 };
+            const flag = &[_]u8{ 0, 0, 0, 0 };
             var ret: u32 = 0;
             switch (ws2_32.WSAIoctl(sock, SIO_UDP_CONNRESET, flag.ptr, flag.len, null, 0, &ret, null, null)) {
                 0 => {},

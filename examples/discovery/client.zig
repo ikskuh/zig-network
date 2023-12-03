@@ -81,7 +81,7 @@ pub fn main() !void {
     var last_count: usize = 0;
     while (true) {
         server_list.mutex.lock();
-        var servers = server_list.getServers();
+        const servers = server_list.getServers();
         if (servers.len != last_count) {
             std.debug.print("\nDiscovered Servers:\n===================\n", .{});
             for (servers) |s| {
@@ -142,7 +142,7 @@ fn scanServersThread(allocator: std.mem.Allocator, server_list: *ServerList) !vo
             last_char -= 1;
         }
 
-        var name = msg[0..last_char];
+        const name = msg[0..last_char];
 
         try server_list.append(Server{
             .address = recv_msg.sender.address,

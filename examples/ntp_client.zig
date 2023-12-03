@@ -25,7 +25,7 @@ pub fn main() !void {
     | @as(u64, @intCast(response[42])) << 8
     | @as(u64, @intCast(response[43]));
     
-    var timestamp = @divFloor(seconds, 2_208_988_800) * std.time.ms_per_s + fractionalSeconds * (std.time.ns_per_s / 4_294_967_296);
+    const timestamp = @divFloor(seconds, 2_208_988_800) * std.time.ms_per_s + fractionalSeconds * (std.time.ns_per_s / 4_294_967_296);
 
     debug.print("NTP timestamp: {}\n", .{timestamp}); //0
 

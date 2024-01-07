@@ -1,11 +1,11 @@
 const std = @import("std");
 
-pub fn build(b: *std.build.Builder) !void {
+pub fn build(b: *std.Build) !void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
     const module = b.addModule("network", .{
-        .source_file = .{ .path = "network.zig" },
+        .root_source_file = .{ .path = "network.zig" },
     });
 
     var test_runner = b.addTest(.{
@@ -13,7 +13,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    test_runner.addModule("network", module);
+    test_runner.root_module.addImport("network", module);
 
     const async_example = b.addExecutable(.{
         .name = "async",
@@ -21,7 +21,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    async_example.addModule("network", module);
+    async_example.root_module.addImport("network", module);
 
     const echo_example = b.addExecutable(.{
         .name = "echo",
@@ -29,7 +29,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    echo_example.addModule("network", module);
+    echo_example.root_module.addImport("network", module);
 
     const udp_example = b.addExecutable(.{
         .name = "udp",
@@ -37,7 +37,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    udp_example.addModule("network", module);
+    udp_example.root_module.addImport("network", module);
 
     const udp_broadcast_example = b.addExecutable(.{
         .name = "udp_broadcast",
@@ -45,7 +45,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    udp_broadcast_example.addModule("network", module);
+    udp_broadcast_example.root_module.addImport("network", module);
 
     const discovery_client = b.addExecutable(.{
         .name = "discovery_client",
@@ -53,7 +53,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    discovery_client.addModule("network", module);
+    discovery_client.root_module.addImport("network", module);
 
     const discovery_server = b.addExecutable(.{
         .name = "discovery_server",
@@ -61,7 +61,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    discovery_server.addModule("network", module);
+    discovery_server.root_module.addImport("network", module);
 
     const ntp_client = b.addExecutable(.{
         .name = "ntp_client",
@@ -69,7 +69,7 @@ pub fn build(b: *std.build.Builder) !void {
         .target = target,
         .optimize = optimize,
     });
-    ntp_client.addModule("network", module);
+    ntp_client.root_module.addImport("network", module);
 
     const test_step = b.step("test", "Runs the test suite.");
     var run = b.addRunArtifact(test_runner);

@@ -370,9 +370,7 @@ pub const Socket = struct {
 
         // std provides a shim for Darwin to set SOCK_NONBLOCK.
         // Socket creation will only set the flag if we provide the shim rather than the actual flag.
-        const socket_type = if (is_unix and std.io.is_async)
-            protocol.toSocketType() | std.os.SOCK.NONBLOCK | std.os.SOCK.CLOEXEC
-        else if (is_unix)
+        const socket_type = if (is_unix)
             protocol.toSocketType() | std.os.SOCK.CLOEXEC
         else
             protocol.toSocketType();
@@ -502,7 +500,7 @@ pub const Socket = struct {
         var addr: std.os.sockaddr.in6 = undefined;
         var addr_size: std.os.socklen_t = @sizeOf(std.os.sockaddr.in6);
 
-        const flags = if (is_windows) 0 else if (std.io.is_async) std.os.O.NONBLOCK else 0;
+        const flags = 0;
 
         const addr_ptr: *std.os.sockaddr = @ptrCast(&addr);
         const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
@@ -1345,11 +1343,6 @@ const windows = struct {
             }
         }
 
-        if (std.io.is_async and std.event.Loop.instance != null) {
-            const loop = std.event.Loop.instance.?;
-            _ = try CreateIoCompletionPort(sock, loop.os_data.io_port, undefined, undefined);
-        }
-
         return sock;
     }
 
@@ -1392,52 +1385,6 @@ const windows = struct {
         dest_addr: ?*const std.os.sockaddr,
         addrlen: std.os.socklen_t,
     ) Socket.SendError!usize {
-        if (std.io.is_async and std.event.Loop.instance != null) {
-            const loop = std.event.Loop.instance.?;
-
-            const Const_WSABUF = extern struct {
-                len: ULONG,
-                buf: [*]const u8,
-            };
-
-            var wsa_buf = Const_WSABUF{
-                .len = @intCast(buf.len),
-                .buf = buf.ptr,
-            };
-
-            var resume_node = std.event.Loop.ResumeNode.Basic{
-                .base = .{
-                    .id = .Basic,
-                    .handle = @frame(),
-                    .overlapped = std.event.Loop.ResumeNode.overlapped_init,
-                },
-            };
-
-            loop.beginOneEvent();
-            suspend {
-                _ = ws2_32.WSASendTo(
-                    sock,
-                    @ptrCast(&wsa_buf),
-                    1,
-                    null,
-                    @intCast(flags),
-                    dest_addr,
-                    @intCast(addrlen),
-                    &resume_node.base.overlapped,
-                    null,
-                );
-            }
-            var bytes_transferred: DWORD = undefined;
-            if (kernel32.GetOverlappedResult(sock, &resume_node.base.overlapped, &bytes_transferred, FALSE) == 0) {
-                switch (kernel32.GetLastError()) {
-                    .IO_PENDING => unreachable,
-                    // TODO Handle more errors
-                    else => |err| return unexpectedError(err),
-                }
-            }
-            return bytes_transferred;
-        }
-
         while (true) {
             const result = funcs.sendto(sock, buf.ptr, @intCast(buf.len), @intCast(flags), dest_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
@@ -1476,56 +1423,6 @@ const windows = struct {
         src_addr: ?*std.os.sockaddr,
         addrlen: ?*std.os.socklen_t,
     ) std.os.RecvFromError!usize {
-        if (std.io.is_async and std.event.Loop.instance != null) {
-            const loop = std.event.Loop.instance.?;
-
-            var wsa_buf = ws2_32.WSABUF{
-                .len = @intCast(buf.len),
-                .buf = buf.ptr,
-            };
-            var lpFlags: DWORD = @intCast(flags);
-
-            var resume_node = std.event.Loop.ResumeNode.Basic{
-                .base = .{
-                    .id = .Basic,
-                    .handle = @frame(),
-                    .overlapped = std.event.Loop.ResumeNode.overlapped_init,
-                },
-            };
-
-            var addrlen_converted: i32 = if (addrlen) |val| @intCast(val.*) else undefined;
-
-            loop.beginOneEvent();
-            suspend {
-                _ = ws2_32.WSARecvFrom(
-                    sock,
-                    @as(*[1]ws2_32.WSABUF, &wsa_buf),
-                    1,
-                    null,
-                    &lpFlags,
-                    src_addr,
-                    if (addrlen != null) &addrlen_converted else null,
-                    &resume_node.base.overlapped,
-                    null,
-                );
-            }
-
-            if (addrlen) |val| {
-                val.* = @intCast(addrlen_converted);
-            }
-
-            var bytes_transferred: DWORD = undefined;
-            if (kernel32.GetOverlappedResult(sock, &resume_node.base.overlapped, &bytes_transferred, FALSE) == 0) {
-                switch (kernel32.GetLastError()) {
-                    .IO_PENDING => unreachable,
-                    // TODO Handle more errors here
-                    .HANDLE_EOF => return @as(usize, bytes_transferred),
-                    else => |err| return unexpectedError(err),
-                }
-            }
-            return @as(usize, bytes_transferred);
-        }
-
         while (true) {
             const result = funcs.recvfrom(sock, buf.ptr, @intCast(buf.len), @intCast(flags), src_addr, addrlen);
             if (result == ws2_32.SOCKET_ERROR) {
@@ -1587,11 +1484,6 @@ const windows = struct {
                     .WSAEOPNOTSUPP => unreachable,
                     else => |err| return unexpectedWSAError(err),
                 };
-            }
-
-            if (std.io.is_async and std.event.Loop.instance != null) {
-                const loop = std.event.Loop.instance.?;
-                _ = try CreateIoCompletionPort(result, loop.os_data.io_port, undefined, undefined);
             }
 
             return result;

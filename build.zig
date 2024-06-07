@@ -5,11 +5,11 @@ pub fn build(b: *std.Build) !void {
     const optimize = b.standardOptimizeOption(.{});
 
     const module = b.addModule("network", .{
-        .root_source_file = .{ .path = "network.zig" },
+        .root_source_file = b.path("network.zig"),
     });
 
     var test_runner = b.addTest(.{
-        .root_source_file = .{ .path = "testsuite.zig" },
+        .root_source_file = b.path("testsuite.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -17,7 +17,7 @@ pub fn build(b: *std.Build) !void {
 
     const async_example = b.addExecutable(.{
         .name = "async",
-        .root_source_file = .{ .path = "examples/async.zig" },
+        .root_source_file = b.path("examples/async.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) !void {
 
     const echo_example = b.addExecutable(.{
         .name = "echo",
-        .root_source_file = .{ .path = "examples/echo.zig" },
+        .root_source_file = b.path("examples/echo.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -33,7 +33,7 @@ pub fn build(b: *std.Build) !void {
 
     const udp_example = b.addExecutable(.{
         .name = "udp",
-        .root_source_file = .{ .path = "examples/multicast_udp.zig" },
+        .root_source_file = b.path("examples/multicast_udp.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -41,7 +41,7 @@ pub fn build(b: *std.Build) !void {
 
     const udp_broadcast_example = b.addExecutable(.{
         .name = "udp_broadcast",
-        .root_source_file = .{ .path = "examples/udp_broadcast.zig" },
+        .root_source_file = b.path("examples/udp_broadcast.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -49,7 +49,7 @@ pub fn build(b: *std.Build) !void {
 
     const discovery_client = b.addExecutable(.{
         .name = "discovery_client",
-        .root_source_file = .{ .path = "examples/discovery/client.zig" },
+        .root_source_file = b.path("examples/discovery/client.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -57,7 +57,7 @@ pub fn build(b: *std.Build) !void {
 
     const discovery_server = b.addExecutable(.{
         .name = "discovery_server",
-        .root_source_file = .{ .path = "examples/discovery/server.zig" },
+        .root_source_file = b.path("examples/discovery/server.zig"),
         .target = target,
         .optimize = optimize,
     });
@@ -65,7 +65,7 @@ pub fn build(b: *std.Build) !void {
 
     const ntp_client = b.addExecutable(.{
         .name = "ntp_client",
-        .root_source_file = .{ .path = "examples/ntp_client.zig" },
+        .root_source_file = b.path("examples/ntp_client.zig"),
         .target = target,
         .optimize = optimize,
     });

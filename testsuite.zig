@@ -63,6 +63,43 @@ test "IPv4 parse" {
     try std.testing.expectEqual(make(255, 255, 255, 255), try parse("255.255.255.255"));
 }
 
+test "IPv6 parse" {
+    const make = network.Address.IPv6.init;
+    const parse = network.Address.IPv6.parse;
+
+    var expected = make(.{0} ** 16, 0);
+    try std.testing.expectEqual(expected, try parse("::"));
+    try std.testing.expectEqual(expected, try parse("0:0:0:0:0:0:0:0"));
+    expected.value[15] = 1;
+    try std.testing.expectEqual(expected, try parse("::1"));
+    expected.value = .{0} ** 16;
+    expected.value[0] = 1;
+    try std.testing.expectEqual(expected, try parse("100::"));
+    expected.value[0] = 0xff;
+    expected.value[1] = 0xff;
+    expected.value[15] = 1;
+    try std.testing.expectEqual(expected, try parse("ffff::1"));
+    expected.value[0] = 0x20;
+    expected.value[1] = 0x01;
+    expected.value[2] = 0x0d;
+    expected.value[3] = 0xb8;
+    expected.value[4] = 0x0a;
+    expected.value[5] = 0x0b;
+    expected.value[6] = 0x11;
+    expected.value[7] = 0xff;
+    expected.value[15] = 0x01;
+    try std.testing.expectEqual(
+        expected,
+        try parse("2001:0db8:0a0b:11ff:0:0:0:1"),
+    );
+    try std.testing.expectEqual(expected, try parse("2001:db8:a0b:11ff::1"));
+
+    try std.testing.expectError(error.InvalidFormat, parse(":"));
+    try std.testing.expectError(error.InvalidFormat, parse(":1"));
+    try std.testing.expectError(error.InvalidFormat, parse("1"));
+    try std.testing.expectError(error.InvalidFormat, parse("0:0:0:0"));
+}
+
 // https://github.com/MasterQ32/zig-network/issues/66
 test "Windows-only, fix UDP WSAECONNRESET error when calling recvfrom after send failure" {
     if (builtin.os.tag != .windows) {

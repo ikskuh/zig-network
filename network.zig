@@ -39,7 +39,8 @@ pub const Address = union(AddressFamily) {
     pub fn parse(string: []const u8) !Address {
         return if (Address.IPv4.parse(string)) |ip|
             Address{ .ipv4 = ip }
-            // TODO: Implement IPv6 parsing
+        else |_| if (Address.IPv6.parse(string)) |ip|
+            Address{ .ipv6 = ip }
         else |_|
             return error.InvalidFormat;
     }
@@ -186,6 +187,129 @@ pub const Address = union(AddressFamily) {
                 }
             }
             try writer.writeAll("]");
+        }
+
+        /// Parse an IPv6 representation according to the canonical format
+        /// described in
+        /// [RFC5952](https://datatracker.ietf.org/doc/html/rfc5952). The
+        /// "scope ID" (otherwise known as "zone ID", `<zone_id>`) is
+        /// intentionally not supported as parsing according to
+        /// [RFC6874](https://datatracker.ietf.org/doc/html/rfc6874) is highly
+        /// platform-specific and difficult to validate.
+        /// (See https://www.w3.org/Bugs/Public/show_bug.cgi?id=27234#c2).
+        pub fn parse(string: []const u8) !IPv6 {
+            if (string.len < 2 or string.len > 39) {
+                return error.InvalidFormat;
+            }
+            // Address cannot start or end with a single ':'.
+            if ((string[0] == ':' and string[1] != ':') or
+                (string[string.len - 2] != ':' and
+                string[string.len - 1] == ':'))
+            {
+                return error.InvalidFormat;
+            }
+
+            var ip: IPv6 = .{ .value = undefined, .scope_id = undefined };
+            // Group index of abbreviation, to know how many groups have been
+            // abbreviated.
+            var abbreviated: ?u3 = null;
+            // Current group index.
+            var cg_index: u3 = 0;
+            var groups: [8][]const u8 = .{""} ** 8;
+
+            groups[0].ptr = string.ptr;
+
+            for (string, 0..) |c, i| {
+                switch (c) {
+                    ':' => {
+                        // Check for "::".
+                        if (i + 1 < string.len and string[i + 1] == ':') {
+                            // "::" cannot appear more than once.
+                            if (abbreviated) |_| {
+                                return error.InvalidFormat;
+                            }
+                            abbreviated = cg_index;
+                            continue;
+                        }
+
+                        var abbreviation_ending: bool = false;
+                        if (abbreviated) |index| {
+                            if (index == cg_index) {
+                                // This ':' is the second in "::".
+                                abbreviation_ending = true;
+                            }
+                        }
+
+                        // Empty groups are not allowed, unless
+                        // leading/trailing abbreviation.
+                        if (groups[cg_index].len == 0 and
+                            (!abbreviation_ending or
+                            (i != 1 and i != string.len - 1)))
+                        {
+                            return error.InvalidFormat;
+                        }
+
+                        // Exactly 8 groups are allowed in a valid address.
+                        if (cg_index == 7) {
+                            return error.InvalidFormat;
+                        }
+
+                        cg_index += 1;
+                        groups[cg_index].ptr = string[i + 1 ..].ptr;
+                    },
+                    'a'...'z', 'A'...'Z', '0'...'9' => {
+                        groups[cg_index].len += 1;
+                    },
+                    else => {
+                        return error.InvalidFormat;
+                    },
+                }
+            }
+
+            // Reorder groups to expand to exactly 8 groups if abbreviated.
+            if (cg_index != 7) {
+                if (abbreviated) |index| {
+                    // Number of groups that must be copied past abbreviation
+                    // expansion.
+                    const num_groups_copy: usize = cg_index - index;
+                    std.mem.copyBackwards(
+                        []const u8,
+                        groups[8 - num_groups_copy ..],
+                        groups[index + 1 .. cg_index + 1],
+                    );
+                    @memset(groups[index + 1 .. 8 - num_groups_copy], "");
+                } else {
+                    return error.InvalidFormat;
+                }
+            }
+
+            // Group index, accounting for abbreviations.
+            for (groups, 0..) |group, i| {
+                // Second byte in group to be parsed.
+                var b2 = group;
+
+                // First byte exists.
+                if (group.len > 2) {
+                    ip.value[i * 2] = try std.fmt.parseInt(
+                        u8,
+                        group[0 .. group.len - 2],
+                        16,
+                    );
+                    b2 = group[group.len - 2 ..];
+                } else {
+                    ip.value[i * 2] = 0;
+                }
+
+                if (group.len > 0) {
+                    ip.value[i * 2 + 1] = try std.fmt.parseInt(u8, b2, 16);
+                } else {
+                    ip.value[i * 2 + 1] = 0;
+                }
+            }
+
+            ip.scope_id = 0;
+
+            return ip;
         }
     };
 

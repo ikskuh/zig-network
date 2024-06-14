@@ -87,7 +87,7 @@ pub const Address = union(AddressFamily) {
         }
 
         pub fn parse(string: []const u8) !IPv4 {
-            var dot_it = std.mem.split(u8, string, ".");
+            var dot_it = std.mem.splitScalar(u8, string, '.');
 
             const d0 = dot_it.next().?; // is always != null
             const d1 = dot_it.next();

@@ -257,7 +257,7 @@ pub const Address = union(AddressFamily) {
                         cg_index += 1;
                         groups[cg_index].ptr = string[i + 1 ..].ptr;
                     },
-                    'a'...'z', 'A'...'Z', '0'...'9' => {
+                    'a'...'f', 'A'...'F', '0'...'9' => {
                         groups[cg_index].len += 1;
                     },
                     else => {
@@ -285,6 +285,10 @@ pub const Address = union(AddressFamily) {
 
             // Group index, accounting for abbreviations.
             for (groups, 0..) |group, i| {
+                if (group.len > 4) {
+                    return error.InvalidFormat;
+                }
+
                 // Second byte in group to be parsed.
                 var b2 = group;
 

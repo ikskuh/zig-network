@@ -98,6 +98,12 @@ test "IPv6 parse" {
     try std.testing.expectError(error.InvalidFormat, parse(":1"));
     try std.testing.expectError(error.InvalidFormat, parse("1"));
     try std.testing.expectError(error.InvalidFormat, parse("0:0:0:0"));
+    try std.testing.expectError(error.InvalidFormat, parse(":::1"));
+    try std.testing.expectError(error.InvalidFormat, parse("6::2::1"));
+
+    // NOTE: The below is a valid IPv6 address with zone ID that is explicitly
+    // not parsed.
+    try std.testing.expectError(error.InvalidFormat, parse("::1%eth0"));
 }
 
 // https://github.com/MasterQ32/zig-network/issues/66

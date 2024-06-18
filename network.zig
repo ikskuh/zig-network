@@ -16,7 +16,7 @@ const is_netbsd = builtin.os.tag == .netbsd;
 const is_dragonfly = builtin.os.tag == .dragonfly;
 
 // use these to test collections of OS type
-const is_bsd = is_darwin or is_freebsd or is_openbsd or is_netbsd or is_dragonfly;
+const is_bsd = builtin.os.tag.isBSD();
 const is_unix = is_bsd or is_linux;
 
 pub fn init() error{InitializationError}!void {
@@ -45,7 +45,11 @@ pub const Address = union(AddressFamily) {
             return error.InvalidFormat;
     }
 
-    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !Address {
+    pub fn jsonParse(
+        allocator: std.mem.Allocator,
+        source: anytype,
+        options: std.json.ParseOptions,
+    ) !Address {
         _ = allocator;
 
         var buffer: [256]u8 = undefined;
@@ -67,24 +71,25 @@ pub const Address = union(AddressFamily) {
         value: [4]u8,
 
         pub fn init(a: u8, b: u8, c: u8, d: u8) Self {
-            return Self{
-                .value = [4]u8{ a, b, c, d },
-            };
+            return Self{ .value = [4]u8{ a, b, c, d } };
         }
 
         pub fn eql(lhs: Self, rhs: Self) bool {
             return std.mem.eql(u8, &lhs.value, &rhs.value);
         }
 
-        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        pub fn format(
+            value: Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
             _ = fmt;
             _ = options;
-            try writer.print("{}.{}.{}.{}", .{
-                value.value[0],
-                value.value[1],
-                value.value[2],
-                value.value[3],
-            });
+            try writer.print(
+                "{}.{}.{}.{}",
+                .{ value.value[0], value.value[1], value.value[2], value.value[3] },
+            );
         }
 
         pub fn parse(string: []const u8) !IPv4 {
@@ -117,7 +122,11 @@ pub const Address = union(AddressFamily) {
             return ip;
         }
 
-        pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !IPv4 {
+        pub fn jsonParse(
+            allocator: std.mem.Allocator,
+            source: anytype,
+            options: std.json.ParseOptions,
+        ) !IPv4 {
             _ = allocator;
 
             var buffer: [256]u8 = undefined;
@@ -143,20 +152,27 @@ pub const Address = union(AddressFamily) {
         }
 
         pub fn eql(lhs: Self, rhs: Self) bool {
-            return std.mem.eql(u8, &lhs.value, &rhs.value) and
-                lhs.scope_id == rhs.scope_id;
+            return std.mem.eql(u8, &lhs.value, &rhs.value) and lhs.scope_id == rhs.scope_id;
         }
 
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+        pub fn format(
+            self: Self,
+            comptime fmt: []const u8,
+            options: std.fmt.FormatOptions,
+            writer: anytype,
+        ) !void {
             _ = fmt;
             _ = options;
-            if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
-                try std.fmt.format(writer, "[::ffff:{}.{}.{}.{}]", .{
-                    self.value[12],
-                    self.value[13],
-                    self.value[14],
-                    self.value[15],
-                });
+            if (std.mem.eql(
+                u8,
+                self.value[0..12],
+                &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff },
+            )) {
+                try std.fmt.format(
+                    writer,
+                    "[::ffff:{}.{}.{}.{}]",
+                    .{ self.value[12], self.value[13], self.value[14], self.value[15] },
+                );
                 return;
             }
             const big_endian_parts: *align(1) const [8]u16 = @ptrCast(&self.value);
@@ -189,13 +205,11 @@ pub const Address = union(AddressFamily) {
             try writer.writeAll("]");
         }
 
-        /// Parse an IPv6 representation according to the canonical format
-        /// described in
-        /// [RFC5952](https://datatracker.ietf.org/doc/html/rfc5952). The
-        /// "scope ID" (otherwise known as "zone ID", `<zone_id>`) is
-        /// intentionally not supported as parsing according to
-        /// [RFC6874](https://datatracker.ietf.org/doc/html/rfc6874) is highly
-        /// platform-specific and difficult to validate.
+        /// Parse an IPv6 representation according to the canonical format described in
+        /// [RFC5952](https://datatracker.ietf.org/doc/html/rfc5952). The "scope ID" (otherwise
+        /// known as "zone ID", `<zone_id>`) is intentionally not supported as parsing according to
+        /// [RFC6874](https://datatracker.ietf.org/doc/html/rfc6874) is highly platform-specific
+        /// and difficult to validate.
         /// (See https://www.w3.org/Bugs/Public/show_bug.cgi?id=27234#c2).
         pub fn parse(string: []const u8) !IPv6 {
             if (string.len < 2 or string.len > 39) {
@@ -203,13 +217,12 @@ pub const Address = union(AddressFamily) {
             }
             // Address cannot start or end with a single ':'.
             if ((string[0] == ':' and string[1] != ':') or
-                (string[string.len - 2] != ':' and
-                string[string.len - 1] == ':'))
+                (string[string.len - 2] != ':' and string[string.len - 1] == ':'))
             {
                 return error.InvalidFormat;
             }
 
-            var ip: IPv6 = .{ .value = undefined, .scope_id = undefined };
+            var ip: IPv6 = .{ .value = undefined, .scope_id = 0 };
             // Group index of abbreviation, to know how many groups have been
             // abbreviated.
             var abbreviated: ?u3 = null;
@@ -233,18 +246,15 @@ pub const Address = union(AddressFamily) {
                         }
 
                         var abbreviation_ending: bool = false;
-                        if (abbreviated) |index| {
-                            if (index == cg_index) {
-                                // This ':' is the second in "::".
-                                abbreviation_ending = true;
-                            }
+                        if (abbreviated != null and abbreviated.? == cg_index) {
+                            // This ':' is the second in "::".
+                            abbreviation_ending = true;
                         }
 
                         // Empty groups are not allowed, unless
                         // leading/trailing abbreviation.
                         if (groups[cg_index].len == 0 and
-                            (!abbreviation_ending or
-                            (i != 1 and i != string.len - 1)))
+                            (!abbreviation_ending or (i != 1 and i != string.len - 1)))
                         {
                             return error.InvalidFormat;
                         }
@@ -283,7 +293,7 @@ pub const Address = union(AddressFamily) {
                 }
             }
 
-            // Group index, accounting for abbreviations.
+            // Parse groups, after accounting for abbreviations.
             for (groups, 0..) |group, i| {
                 if (group.len > 4) {
                     return error.InvalidFormat;
@@ -294,11 +304,7 @@ pub const Address = union(AddressFamily) {
 
                 // First byte exists.
                 if (group.len > 2) {
-                    ip.value[i * 2] = try std.fmt.parseInt(
-                        u8,
-                        group[0 .. group.len - 2],
-                        16,
-                    );
+                    ip.value[i * 2] = try std.fmt.parseInt(u8, group[0 .. group.len - 2], 16);
                     b2 = group[group.len - 2 ..];
                 } else {
                     ip.value[i * 2] = 0;
@@ -311,13 +317,16 @@ pub const Address = union(AddressFamily) {
                 }
             }
 
-            ip.scope_id = 0;
-
             return ip;
         }
     };
 
-    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        value: @This(),
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         switch (value) {
             .ipv4 => |a| try a.format(fmt, options, writer),
             .ipv6 => |a| try a.format(fmt, options, writer),
@@ -325,8 +334,7 @@ pub const Address = union(AddressFamily) {
     }
 
     pub fn eql(lhs: @This(), rhs: @This()) bool {
-        if (@as(AddressFamily, lhs) != @as(AddressFamily, rhs))
-            return false;
+        if (@as(AddressFamily, lhs) != @as(AddressFamily, rhs)) return false;
         return switch (lhs) {
             .ipv4 => |l| l.eql(rhs.ipv4),
             .ipv6 => |l| l.eql(rhs.ipv6),
@@ -379,19 +387,21 @@ pub const EndPoint = struct {
     port: u16, // Stored as native, will convert to bigEndian when moving to sockaddr
 
     pub fn parse(string: []const u8) !EndPoint {
-        const colon_index = std.mem.indexOfScalar(u8, string, ':') orelse return error.InvalidFormat;
+        const colon_index = std.mem.indexOfScalar(u8, string, ':') orelse
+            return error.InvalidFormat;
 
         const address = try Address.parse(string[0..colon_index]);
 
         const port = try std.fmt.parseInt(u16, string[colon_index + 1 ..], 10);
 
-        return EndPoint{
-            .address = address,
-            .port = port,
-        };
+        return EndPoint{ .address = address, .port = port };
     }
 
-    pub fn jsonParse(allocator: std.mem.Allocator, source: anytype, options: std.json.ParseOptions) !EndPoint {
+    pub fn jsonParse(
+        allocator: std.mem.Allocator,
+        source: anytype,
+        options: std.json.ParseOptions,
+    ) !EndPoint {
         _ = allocator;
 
         var buffer: [256]u8 = undefined;
@@ -402,41 +412,39 @@ pub const EndPoint = struct {
         return parse(str) catch return error.UnexpectedToken;
     }
 
-    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(
+        value: Self,
+        comptime fmt: []const u8,
+        options: std.fmt.FormatOptions,
+        writer: anytype,
+    ) !void {
         _ = fmt;
         _ = options;
-        try writer.print("{}:{}", .{
-            value.address,
-            value.port,
-        });
+        try writer.print("{}:{}", .{ value.address, value.port });
     }
 
-    pub fn fromSocketAddress(src: *const std.posix.sockaddr, size: usize) !Self {
+    pub fn fromSocketAddress(
+        src: *const std.posix.sockaddr,
+        size: usize,
+    ) !Self {
         switch (src.family) {
             std.posix.AF.INET => {
-                if (size < @sizeOf(std.posix.sockaddr.in))
-                    return error.InsufficientBytes;
+                if (size < @sizeOf(std.posix.sockaddr.in)) return error.InsufficientBytes;
                 const value: *align(4) const std.posix.sockaddr.in = @ptrCast(@alignCast(src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = .{
-                        .ipv4 = .{
-                            .value = @bitCast(value.addr),
-                        },
+                        .ipv4 = .{ .value = @bitCast(value.addr) },
                     },
                 };
             },
             std.posix.AF.INET6 => {
-                if (size < @sizeOf(std.posix.sockaddr.in6))
-                    return error.InsufficientBytes;
+                if (size < @sizeOf(std.posix.sockaddr.in6)) return error.InsufficientBytes;
                 const value: *align(4) const std.posix.sockaddr.in6 = @ptrCast(@alignCast(src));
                 return EndPoint{
                     .port = std.mem.bigToNative(u16, value.port),
                     .address = .{
-                        .ipv6 = .{
-                            .value = value.addr,
-                            .scope_id = value.scope_id,
-                        },
+                        .ipv6 = .{ .value = value.addr, .scope_id = value.scope_id },
                     },
                 };
             },
@@ -475,8 +483,8 @@ pub const EndPoint = struct {
     }
 };
 
-/// A network socket, can receive and send data for TCP/UDP and accept
-/// incoming connections if bound as a TCP server.
+/// A network socket, can receive and send data for TCP/UDP and accept incoming connections if
+/// bound as a TCP server.
 pub const Socket = struct {
     pub const SendError = (std.posix.SendError || std.posix.SendToError);
     pub const ReceiveError = std.posix.RecvFromError;
@@ -485,10 +493,9 @@ pub const Socket = struct {
     pub const Writer = std.io.Writer(Socket, SendError, send);
 
     const Self = @This();
-    const NativeSocket = if (is_windows) windows.ws2_32.SOCKET else std.posix.fd_t;
 
     family: AddressFamily,
-    internal: NativeSocket,
+    internal: std.posix.socket_t,
     endpoint: ?EndPoint,
 
     /// Spawns a new socket that must be freed with `close()`.
@@ -497,7 +504,8 @@ pub const Socket = struct {
         const socket_fn = if (is_windows) windows.socket else std.posix.socket;
 
         // std provides a shim for Darwin to set SOCK_NONBLOCK.
-        // Socket creation will only set the flag if we provide the shim rather than the actual flag.
+        // Socket creation will only set the flag if we provide the shim rather
+        // than the actual flag.
         const socket_type = if (is_unix)
             protocol.toSocketType() | std.posix.SOCK.CLOEXEC
         else
@@ -512,17 +520,22 @@ pub const Socket = struct {
 
     /// Closes the socket and releases its resources.
     pub fn close(self: Self) void {
-        const close_fn = if (is_windows) windows.close else std.posix.close;
-        close_fn(self.internal);
+        std.posix.close(self.internal);
     }
 
     /// Binds the socket to the given end point.
     pub fn bind(self: *Self, ep: EndPoint) !void {
-        const bind_fn = if (is_windows) windows.bind else std.posix.bind;
-
         switch (ep.toSocketAddress()) {
-            .ipv4 => |sockaddr| try bind_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try bind_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try std.posix.bind(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
+            .ipv6 => |sockaddr| try std.posix.bind(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
         }
     }
 
@@ -551,88 +564,109 @@ pub const Socket = struct {
     pub fn setReadTimeout(self: *Self, read: ?u32) !void {
         std.debug.assert(read == null or read.? != 0);
         const micros = read orelse 0;
-        if (is_windows) {
-            var val: u32 = @divTrunc(micros, 1000);
-            try windows.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&val));
-        } else {
-            var read_timeout: std.posix.timeval = undefined;
-            read_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
-            read_timeout.tv_usec = @intCast(@mod(micros, 1000000));
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
-        }
+        var val: u32 = @divTrunc(micros, 1000);
+        var read_timeout: std.posix.timeval = undefined;
+        read_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
+        read_timeout.tv_usec = @intCast(@mod(micros, 1000000));
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.RCVTIMEO,
+            if (is_windows)
+                std.mem.asBytes(&val)
+            else
+                std.mem.toBytes(read_timeout)[0..],
+        );
     }
 
     /// Set socket write timeout in microseconds
     pub fn setWriteTimeout(self: *Self, write: ?u32) !void {
         std.debug.assert(write == null or write.? != 0);
         const micros = write orelse 0;
-        if (is_windows) {
-            var val: u32 = @divTrunc(micros, 1000);
-            try windows.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.SNDTIMEO, std.mem.asBytes(&val));
-        } else {
-            var write_timeout: std.posix.timeval = undefined;
-            write_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
-            write_timeout.tv_usec = @intCast(@mod(micros, 1000000));
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
-        }
+        var val: u32 = @divTrunc(micros, 1000);
+        var write_timeout: std.posix.timeval = undefined;
+        write_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
+        write_timeout.tv_usec = @intCast(@mod(micros, 1000000));
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.SNDTIMEO,
+            if (is_windows)
+                std.mem.asBytes(&val)
+            else
+                std.mem.toBytes(write_timeout)[0..],
+        );
     }
 
-    /// Sets the SO_BROADCAST socket option to enable/disable UDP broadcast. Only supported for IPv4.
+    /// Sets the SO_BROADCAST socket option to enable/disable UDP broadcast.
+    /// Only supported for IPv4.
     pub fn setBroadcast(self: *Self, enable: bool) !void {
         std.debug.assert(self.family == .ipv4);
 
         const val: u32 = if (enable) 1 else 0;
-        if (is_windows) {
-            try windows.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, std.mem.asBytes(&val));
-        } else {
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, std.mem.asBytes(&val));
-        }
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.BROADCAST,
+            std.mem.asBytes(&val),
+        );
     }
 
     /// Connects the UDP or TCP socket to a remote server.
     /// The `target` address type must fit the address type of the socket.
     pub fn connect(self: *Self, target: EndPoint) !void {
-        if (target.address != self.family)
-            return error.AddressFamilyMismach;
+        if (target.address != self.family) return error.AddressFamilyMismach;
 
         // on darwin you set the NOSIGNAl once, rather than for each message
         if (is_bsd) {
             // set the options to ON
             const value: u32 = 1;
-            const SO_NOSIGPIPE = 0x00000800;
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, SO_NOSIGPIPE, std.mem.asBytes(&value));
+            try std.posix.setsockopt(
+                self.internal,
+                std.posix.SOL.SOCKET,
+                std.c.SO.NOSIGPIPE,
+                std.mem.asBytes(&value),
+            );
         }
 
-        const connect_fn = if (is_windows) windows.connect else std.posix.connect;
         switch (target.toSocketAddress()) {
-            .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try std.posix.connect(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
+            .ipv6 => |sockaddr| try std.posix.connect(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
         }
         self.endpoint = target;
     }
 
-    /// Makes this socket a TCP server and allows others to connect to
-    /// this socket.
+    /// Makes this socket a TCP server and allows others to connect to this socket.
     /// Call `accept()` to handle incoming connections.
     pub fn listen(self: Self) !void {
-        const listen_fn = if (is_windows) windows.listen else std.posix.listen;
-        try listen_fn(self.internal, 0);
+        try std.posix.listen(self.internal, 0);
     }
 
-    /// Waits until a new TCP client connects to this socket and accepts the incoming TCP connection.
-    /// This function is only allowed for a bound TCP socket. `listen()` must have been called before!
+    /// Waits until a new TCP client connects to this socket and accepts the incoming TCP
+    /// connection. This function is only allowed for a bound TCP socket. `listen()` must have been
+    /// called before!
     pub fn accept(self: Self) !Socket {
-        const accept4_fn = if (is_windows) windows.accept4 else std.posix.accept;
-        const close_fn = if (is_windows) windows.close else std.posix.close;
-
         var addr: std.posix.sockaddr.in6 = undefined;
         var addr_size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const flags = 0;
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
-        errdefer close_fn(fd);
+        const fd = try std.posix.accept(
+            self.internal,
+            addr_ptr,
+            &addr_size,
+            flags,
+        );
+        errdefer std.posix.close(fd);
 
         return Socket{
             .family = try AddressFamily.fromNativeAddressFamily(addr_ptr.family),
@@ -641,40 +675,36 @@ pub const Socket = struct {
         };
     }
 
-    /// Send some data to the connected peer. In UDP, this
-    /// will always send full packets, on TCP it will append
-    /// to the stream.
+    /// Send some data to the connected peer. In UDP, this will always send full packets, on TCP it
+    /// will append to the stream.
     pub fn send(self: Self, data: []const u8) SendError!usize {
-        if (self.endpoint) |ep|
-            return try self.sendTo(ep, data);
-        const send_fn = if (is_windows) windows.send else std.posix.send;
+        if (self.endpoint) |ep| return try self.sendTo(ep, data);
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
-        return try send_fn(self.internal, data, flags);
+        return try std.posix.send(self.internal, data, flags);
     }
 
     /// Non-Blockingly peeks at data from the connected peer.
     /// Will not change the stream state.
     pub fn peek(self: Self, data: []u8) ReceiveError!usize {
-        const recvfrom_fn = if (is_windows) windows.recvfrom else std.posix.recvfrom;
         const flags = if (is_windows) 0x2 else std.os.linux.MSG.PEEK;
-        return try recvfrom_fn(self.internal, data, flags, null, null);
+        return try std.posix.recvfrom(self.internal, data, flags, null, null);
     }
 
     /// Blockingly receives some data from the connected peer.
-    /// Will read all available data from the TCP stream or
-    /// a UDP packet.
+    /// Will read all available data from the TCP stream or a UDP packet.
     pub fn receive(self: Self, data: []u8) ReceiveError!usize {
-        const recvfrom_fn = if (is_windows) windows.recvfrom else std.posix.recvfrom;
-        const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
-        return try recvfrom_fn(self.internal, data, flags, null, null);
+        const flags = if (is_windows or is_bsd)
+            0
+        else
+            std.os.linux.MSG.NOSIGNAL;
+        return try std.posix.recvfrom(self.internal, data, flags, null, null);
     }
 
     const ReceiveFrom = struct { numberOfBytes: usize, sender: EndPoint };
 
-    /// Same as ´receive`, but will also return the end point from which the data
-    /// was received. This is only a valid operation on UDP sockets.
+    /// Same as ´receive`, but will also return the end point from which the
+    /// data was received. This is only a valid operation on UDP sockets.
     pub fn receiveFrom(self: Self, data: []u8) !ReceiveFrom {
-        const recvfrom_fn = if (is_windows) windows.recvfrom else std.posix.recvfrom;
         const flags = if (is_linux) std.os.linux.MSG.NOSIGNAL else 0;
 
         // Use the ipv6 sockaddr to guarantee data will fit.
@@ -682,7 +712,13 @@ pub const Socket = struct {
         var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        const len = try recvfrom_fn(self.internal, data, flags | if (is_windows) 0 else 4, addr_ptr, &size);
+        const len = try std.posix.recvfrom(
+            self.internal,
+            data,
+            flags | if (is_windows) 0 else 4,
+            addr_ptr,
+            &size,
+        );
 
         return ReceiveFrom{
             .numberOfBytes = len,
@@ -690,50 +726,59 @@ pub const Socket = struct {
         };
     }
 
-    /// Sends a packet to a given network end point. Behaves the same as `send()`, but will only work for
-    /// for UDP sockets.
+    /// Sends a packet to a given network end point. Behaves the same as `send()`, but will only
+    /// work for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) SendError!usize {
-        const sendto_fn = if (is_windows) windows.sendto else std.posix.sendto;
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
-            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try std.posix.sendto(
+                self.internal,
+                data,
+                flags,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
+            .ipv6 => |sockaddr| try std.posix.sendto(
+                self.internal,
+                data,
+                flags,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
         };
     }
 
-    /// Sets the socket option `SO_REUSEPORT` which allows
-    /// multiple bindings of the same socket to the same address
-    /// on UDP sockets and allows quicker re-binding of TCP sockets.
+    /// Sets the socket option `SO_REUSEPORT` which allows multiple bindings of the same socket to
+    /// the same address on UDP sockets and allows quicker re-binding of TCP sockets.
     pub fn enablePortReuse(self: Self, enabled: bool) !void {
-        const setsockopt_fn = if (is_windows) windows.setsockopt else std.posix.setsockopt;
-
         var opt: c_int = if (enabled) 1 else 0;
-        try setsockopt_fn(self.internal, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, std.mem.asBytes(&opt));
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.REUSEADDR,
+            std.mem.asBytes(&opt),
+        );
     }
 
     /// Retrieves the end point to which the socket is bound.
     pub fn getLocalEndPoint(self: Self) !EndPoint {
-        const getsockname_fn = if (is_windows) windows.getsockname else std.posix.getsockname;
-
         var addr: std.posix.sockaddr.in6 align(4) = undefined;
         var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        try getsockname_fn(self.internal, addr_ptr, &size);
+        try std.posix.getsockname(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
     }
 
     /// Retrieves the end point to which the socket is connected.
     pub fn getRemoteEndPoint(self: Self) !EndPoint {
-        const getpeername_fn = if (is_windows) windows.getpeername else getpeername;
-
         var addr: std.posix.sockaddr.in6 align(4) = undefined;
         var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        try getpeername_fn(self.internal, addr_ptr, &size);
+        try std.posix.getpeername(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
     }
@@ -747,8 +792,6 @@ pub const Socket = struct {
     /// Multicast enables sending packets to the group and all joined peers
     /// will receive the sent data.
     pub fn joinMulticastGroup(self: Self, group: MulticastGroup) !void {
-        const setsockopt_fn = if (is_windows) windows.setsockopt else std.posix.setsockopt;
-
         const ip_mreq = extern struct {
             imr_multiaddr: u32,
             imr_address: u32,
@@ -764,7 +807,12 @@ pub const Socket = struct {
         const IP_ADD_MEMBERSHIP = if (is_windows) 5 else if (is_bsd) 12 else 35;
         const level = if (is_bsd) std.posix.IPPROTO.IP else std.posix.SOL.SOCKET;
 
-        try setsockopt_fn(self.internal, level, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
+        try std.posix.setsockopt(
+            self.internal,
+            level,
+            IP_ADD_MEMBERSHIP,
+            std.mem.asBytes(&request),
+        );
     }
 
     /// Gets an reader that allows reading data from the socket.
@@ -783,27 +831,23 @@ pub const SocketEvent = struct {
     /// Wait for data ready to be read.
     read: bool,
 
-    /// Wait for all pending data to be sent and the socket accepting
-    /// non-blocking writes.
+    /// Wait for all pending data to be sent and the socket accepting non-blocking writes.
     write: bool,
 };
 
 /// A set of sockets that can be used to query socket readiness.
-/// This is similar to `select()´ or `poll()` and provides a way to
-/// create non-blocking socket I/O.
-/// This is intented to be used with `waitForSocketEvents()`.
+/// This is similar to `select()´ or `poll()` and provides a way to create non-blocking socket I/O.
+/// This is intended to be used with `waitForSocketEvents()`.
 pub const SocketSet = struct {
     const Self = @This();
 
     internal: OSLogic,
 
-    /// Initialize a new socket set. This can be reused for
-    /// multiple queries without having to reset the set every time.
+    /// Initialize a new socket set. This can be reused for multiple queries without having to
+    /// reset the set every time.
     /// Call `deinit()` to free the socket set.
     pub fn init(allocator: std.mem.Allocator) !Self {
-        return Self{
-            .internal = try OSLogic.init(allocator),
-        };
+        return Self{ .internal = try OSLogic.init(allocator) };
     }
 
     /// Frees the contained resources.
@@ -816,8 +860,7 @@ pub const SocketSet = struct {
         self.internal.clear();
     }
 
-    /// Adds a socket to the set and enables waiting for any of the events
-    /// in `events`.
+    /// Adds a socket to the set and enables waiting for any of the events in `events`.
     pub fn add(self: *Self, sock: Socket, events: SocketEvent) !void {
         try self.internal.add(sock, events);
     }
@@ -846,8 +889,8 @@ pub const SocketSet = struct {
     }
 };
 
-/// Implementation of SocketSet for each platform,
-/// keeps the thing above nice and clean, all functions get inlined.
+/// Implementation of SocketSet for each platform, keeps the thing above nice and clean.
+/// All functions get inlined.
 const OSLogic = switch (builtin.os.tag) {
     .windows => WindowsOSLogic,
     .linux => LinuxOSLogic,
@@ -864,9 +907,7 @@ const LinuxOSLogic = struct {
     fds: std.ArrayList(std.posix.pollfd),
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        return Self{
-            .fds = std.ArrayList(std.posix.pollfd).init(allocator),
-        };
+        return Self{ .fds = std.ArrayList(std.posix.pollfd).init(allocator) };
     }
 
     inline fn deinit(self: Self) void {
@@ -881,10 +922,8 @@ const LinuxOSLogic = struct {
         // Always poll for errors as this is done anyways
         var mask: i16 = std.posix.POLL.ERR;
 
-        if (events.read)
-            mask |= std.posix.POLL.IN;
-        if (events.write)
-            mask |= std.posix.POLL.OUT;
+        if (events.read) mask |= std.posix.POLL.IN;
+        if (events.write) mask |= std.posix.POLL.OUT;
 
         for (self.fds.items) |*pfd| {
             if (pfd.fd == sock.internal) {
@@ -893,17 +932,12 @@ const LinuxOSLogic = struct {
             }
         }
 
-        try self.fds.append(std.posix.pollfd{
-            .fd = sock.internal,
-            .events = mask,
-            .revents = 0,
-        });
+        try self.fds.append(std.posix.pollfd{ .fd = sock.internal, .events = mask, .revents = 0 });
     }
 
     inline fn remove(self: *Self, sock: Socket) void {
         const index = for (self.fds.items, 0..) |item, i| {
-            if (item.fd == sock.internal)
-                break i;
+            if (item.fd == sock.internal) break i;
         } else null;
 
         if (index) |idx| {
@@ -913,8 +947,7 @@ const LinuxOSLogic = struct {
 
     inline fn checkMaskAnyBit(self: Self, sock: Socket, mask: i16) bool {
         for (self.fds.items) |item| {
-            if (item.fd != sock.internal)
-                continue;
+            if (item.fd != sock.internal) continue;
 
             if ((item.revents & mask) != 0) {
                 return true;
@@ -938,15 +971,16 @@ const LinuxOSLogic = struct {
     }
 };
 
-/// Alias to LinuxOSLogic as the logic between the two are shared and both support poll()
+/// Alias to LinuxOSLogic as the logic between the two are shared and both
+/// support poll()
 const DarwinOsLogic = LinuxOSLogic;
 
 // On windows, we use select()
 const WindowsOSLogic = struct {
-    // The windows struct fd_set uses a statically size array of 64 sockets by default.
-    // However, it is documented that one can create bigger sets and pass them into the functions that use them.
-    // Instead, we dynamically allocate the sets and reallocate them as needed.
-    // See https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
+    // The windows struct fd_set uses a statically size array of 64 sockets by default. However, it
+    // is documented that one can create bigger sets and pass them into the functions that use them.
+    // Instead, we dynamically allocate the sets and reallocate them as needed. See
+    // https://docs.microsoft.com/en-us/windows/win32/winsock/maximum-number-of-sockets-supported-2
     const FdSet = extern struct {
         padding1: c_uint = 0, // This is added to guarantee &size is 8 byte aligned
         capacity: c_uint,
@@ -954,15 +988,19 @@ const WindowsOSLogic = struct {
         padding2: c_uint = 0, // This is added to guarantee &fds is 8 byte aligned
         // fds: SOCKET[size]
 
-        fn fdSlice(self: *align(8) FdSet) []windows.ws2_32.SOCKET {
+        fn fdSlice(self: *align(8) FdSet) []windows.SOCKET {
             const ptr: [*]u8 = @ptrCast(self);
-            const socket_ptr: [*]windows.ws2_32.SOCKET = @alignCast(@ptrCast(ptr + 4 * @sizeOf(c_uint)));
+            const socket_ptr: [*]windows.SOCKET = @alignCast(@ptrCast(ptr + 4 * @sizeOf(c_uint)));
             return socket_ptr[0..self.size];
         }
 
         fn make(allocator: std.mem.Allocator) !*align(8) FdSet {
             // Initialize with enough space for 8 sockets.
-            const mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
+            const mem = try allocator.alignedAlloc(
+                u8,
+                8,
+                4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.SOCKET),
+            );
 
             const fd_set: *align(8) FdSet = @ptrCast(mem);
             fd_set.* = .{ .capacity = 8, .size = 0 };
@@ -975,7 +1013,7 @@ const WindowsOSLogic = struct {
 
         fn memSlice(self: *align(8) FdSet) []u8 {
             const ptr: [*]u8 = @ptrCast(self);
-            return ptr[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows.ws2_32.SOCKET))];
+            return ptr[0..(4 * @sizeOf(c_uint) + self.capacity * @sizeOf(windows.SOCKET))];
         }
 
         fn deinit(self: *align(8) FdSet, allocator: std.mem.Allocator) void {
@@ -983,19 +1021,28 @@ const WindowsOSLogic = struct {
             allocator.free(ptr);
         }
 
-        fn containsFd(self: *align(8) FdSet, fd: windows.ws2_32.SOCKET) bool {
+        fn containsFd(self: *align(8) FdSet, fd: windows.SOCKET) bool {
             for (self.fdSlice()) |ex_fd| {
                 if (ex_fd == fd) return true;
             }
             return false;
         }
 
-        fn addFd(fd_set: **align(8) FdSet, allocator: std.mem.Allocator, new_fd: windows.ws2_32.SOCKET) !void {
+        fn addFd(
+            fd_set: **align(8) FdSet,
+            allocator: std.mem.Allocator,
+            new_fd: windows.SOCKET,
+        ) !void {
             if (fd_set.*.size == fd_set.*.capacity) {
                 // Double our capacity.
-                const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
+                const new_mem_size = 4 * @sizeOf(c_uint) +
+                    2 * fd_set.*.capacity * @sizeOf(windows.SOCKET);
                 const ptr: []u8 align(8) = @alignCast(fd_set.*.memSlice());
-                fd_set.* = @alignCast(@ptrCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr));
+                fd_set.* = @alignCast(@ptrCast((try allocator.reallocAdvanced(
+                    ptr,
+                    new_mem_size,
+                    @returnAddress(),
+                )).ptr));
                 fd_set.*.capacity *= 2;
             }
 
@@ -1014,19 +1061,16 @@ const WindowsOSLogic = struct {
 
     allocator: std.mem.Allocator,
 
-    read_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
-    write_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
+    read_fds: std.ArrayListUnmanaged(windows.SOCKET),
+    write_fds: std.ArrayListUnmanaged(windows.SOCKET),
 
     read_fd_set: *align(8) FdSet,
     write_fd_set: *align(8) FdSet,
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        // TODO: https://github.com/ziglang/zig/issues/5391
-        var read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
-        var write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
-        try read_fds.ensureTotalCapacity(allocator, 8);
-        try write_fds.ensureTotalCapacity(allocator, 8);
+        const read_fds = std.ArrayListUnmanaged(windows.SOCKET).initCapacity(allocator, 8);
+        const write_fds = std.ArrayListUnmanaged(windows.SOCKET).initCapacity(allocator, 8);
 
         return Self{
             .allocator = allocator,
@@ -1086,11 +1130,7 @@ const WindowsOSLogic = struct {
         }
     }
 
-    const Set = enum {
-        read,
-        write,
-        except,
-    };
+    const Set = enum { read, write, except };
 
     inline fn getFdSet(self: *Self, comptime set_selection: Set) !?[*]u8 {
         const set_ptr = switch (set_selection) {
@@ -1142,19 +1182,18 @@ const WindowsOSLogic = struct {
 };
 
 /// Waits until sockets in SocketSet are ready to read/write or have a fault condition.
-/// If `timeout` is not `null`, it describes a timeout in nanoseconds until the function
-/// should return.
-/// Note that `timeout` granularity may not be available in nanoseconds and larger
-/// granularities are used.
-/// If the requested timeout interval requires a finer granularity than the implementation supports, the
-/// actual timeout interval shall be rounded up to the next supported value.
+/// If `timeout` is not `null`, it describes timeout in nanoseconds until function should return.
+/// Note that `timeout` granularity may not be available in nanoseconds and larger granularities
+/// are used. If the requested timeout interval requires finer granularity than the implementation
+/// supports, the actual timeout interval shall be rounded up to the next supported value.
 pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
     switch (builtin.os.tag) {
         .windows => {
             const read_set = try set.internal.getFdSet(.read);
             const write_set = try set.internal.getFdSet(.write);
             const except_set = try set.internal.getFdSet(.except);
-            if (read_set == null and write_set == null and except_set == null) return 0;
+            if (read_set == null and write_set == null and except_set == null)
+                return 0;
 
             const tm: windows.timeval = if (timeout) |tout| block: {
                 const secs = @divFloor(tout, std.time.ns_per_s);
@@ -1163,41 +1202,31 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             } else .{ .tv_sec = 0, .tv_usec = 0 };
 
             // Windows ignores first argument.
-            return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
+            return try windows.select(
+                0,
+                read_set,
+                write_set,
+                except_set,
+                if (timeout != null) &tm else null,
+            );
         },
         .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
             set.internal.fds.items,
-            if (timeout) |val| @as(i32, @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms)) else -1,
+            if (timeout) |val| @as(
+                i32,
+                @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms),
+            ) else -1,
         ),
         else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
     }
 }
 
 const GetPeerNameError = error{
-    /// Insufficient resources were available in the system to perform the operation.
+    /// Insufficient resources were available in the system to perform the
+    /// operation.
     SystemResources,
     NotConnected,
 } || std.posix.UnexpectedError;
-
-const MissingCApi = struct {
-    extern "c" fn getpeername(sockfd: std.posix.fd_t, noalias addr: *std.posix.sockaddr, noalias addrlen: *std.posix.socklen_t) c_int;
-};
-
-fn getpeername(sockfd: std.posix.fd_t, addr: *std.posix.sockaddr, addrlen: *std.posix.socklen_t) GetPeerNameError!void {
-    const getpeername_fix = if (std.posix.system == std.c) MissingCApi.getpeername else std.posix.system.getpeername;
-
-    switch (std.posix.errno(getpeername_fix(sockfd, addr, addrlen))) {
-        .SUCCESS => return,
-        else => |err| return std.posix.unexpectedErrno(err),
-
-        .BADF => unreachable, // always a race condition
-        .FAULT => unreachable,
-        .INVAL => unreachable, // invalid parameters
-        .NOTSOCK => unreachable,
-        .NOBUFS => return error.SystemResources,
-        .NOTCONN => return error.NotConnected,
-    }
-}
 
 pub fn connectToHost(
     allocator: std.mem.Allocator,
@@ -1240,11 +1269,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         errdefer arena.deinit();
 
         const result = try arena.allocator().create(EndpointList);
-        result.* = EndpointList{
-            .arena = arena,
-            .endpoints = undefined,
-            .canon_name = null,
-        };
+        result.* = EndpointList{ .arena = arena, .endpoints = undefined, .canon_name = null };
         break :blk result;
     };
     const arena = result.arena.allocator();
@@ -1252,10 +1277,16 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
 
     if (builtin.link_libc or is_windows) {
         const getaddrinfo_fn = if (is_windows) windows.getaddrinfo else libc_getaddrinfo;
-        const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
+        const freeaddrinfo_fn = if (is_windows)
+            windows.funcs.freeaddrinfo
+        else
+            std.posix.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
-        const AI_NUMERICSERV = if (is_windows) 0x00000008 else std.c.AI.NUMERICSERV;
+        const AI_NUMERICSERV = if (is_windows)
+            windows.ws2_32.AI.NUMERICSERV
+        else
+            std.c.AI.NUMERICSERV;
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
@@ -1297,19 +1328,21 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
             const addr: Address = switch (sockaddr.family) {
                 std.posix.AF.INET => block: {
                     const bytes: *const [4]u8 = @ptrCast(sockaddr.data[2..]);
-                    break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
+                    break :block .{
+                        .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]),
+                    };
                 },
                 std.posix.AF.INET6 => block: {
                     const sockaddr_in6: *align(1) const std.posix.sockaddr.in6 = @ptrCast(sockaddr);
-                    break :block .{ .ipv6 = Address.IPv6.init(sockaddr_in6.addr, sockaddr_in6.scope_id) };
+                    break :block .{ .ipv6 = Address.IPv6.init(
+                        sockaddr_in6.addr,
+                        sockaddr_in6.scope_id,
+                    ) };
                 },
                 else => unreachable,
             };
 
-            result.endpoints[i] = .{
-                .address = addr,
-                .port = port,
-            };
+            result.endpoints[i] = .{ .address = addr, .port = port };
 
             if (info.canonname) |n| {
                 if (result.canon_name == null) {
@@ -1340,16 +1373,18 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
             const addr: Address = switch (net_addr.any.family) {
                 std.posix.AF.INET => block: {
                     const bytes: *const [4]u8 = @ptrCast(&net_addr.in.sa.addr);
-                    break :block .{ .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]) };
+                    break :block .{
+                        .ipv4 = Address.IPv4.init(bytes[0], bytes[1], bytes[2], bytes[3]),
+                    };
                 },
-                std.posix.AF.INET6 => .{ .ipv6 = Address.IPv6.init(net_addr.in6.sa.addr, net_addr.in6.sa.scope_id) },
+                std.posix.AF.INET6 => .{ .ipv6 = Address.IPv6.init(
+                    net_addr.in6.sa.addr,
+                    net_addr.in6.sa.scope_id,
+                ) },
                 else => unreachable,
             };
 
-            result.endpoints[idx] = EndPoint{
-                .address = addr,
-                .port = port,
-            };
+            result.endpoints[idx] = EndPoint{ .address = addr, .port = port };
             idx += 1;
         }
 
@@ -1406,6 +1441,8 @@ const windows = struct {
     pub const WSACleanup = std.os.windows.WSACleanup;
     pub const WSASocketW = std.os.windows.WSASocketW;
     pub const WSAStartup = std.os.windows.WSAStartup;
+    pub const WINAPI = std.os.windows.WINAPI;
+    pub const SOCKET = ws2_32.SOCKET;
 
     const timeval = extern struct {
         tv_sec: c_long,
@@ -1424,22 +1461,22 @@ const windows = struct {
     };
 
     const funcs = struct {
-        extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.posix.sockaddr, tolen: std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn send(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn listen(s: ws2_32.SOCKET, backlog: c_int) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn accept(s: ws2_32.SOCKET, addr: [*c]std.posix.sockaddr, addrlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) ws2_32.SOCKET;
-        extern "ws2_32" fn setsockopt(s: ws2_32.SOCKET, level: c_int, optname: c_int, optval: [*c]const u8, optlen: c_int) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn getsockname(s: ws2_32.SOCKET, name: [*c]std.posix.sockaddr, namelen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn getpeername(s: ws2_32.SOCKET, name: [*c]std.posix.sockaddr, namelen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
-        extern "ws2_32" fn bind(s: ws2_32.SOCKET, addr: [*c]const std.posix.sockaddr, namelen: std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const addrinfo, result: **addrinfo) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(std.os.windows.WINAPI) void;
+        extern "ws2_32" fn getaddrinfo(
+            nodename: [*:0]const u8,
+            servicename: [*:0]const u8,
+            hints: *const addrinfo,
+            result: **addrinfo,
+        ) callconv(WINAPI) c_int;
+        extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(WINAPI) void;
     };
 
-    fn socket(addr_family: u32, socket_type: u32, protocol: u32) std.posix.SocketError!ws2_32.SOCKET {
+    // TODO: This may be replaceable with `std.posix.socket`'s Windows-specific wrapping.
+    fn socket(
+        addr_family: u32,
+        socket_type: u32,
+        protocol: u32,
+    ) std.posix.SocketError!ws2_32.SOCKET {
         const sock = try WSASocketW(
             @intCast(addr_family),
             @intCast(socket_type),
@@ -1451,8 +1488,8 @@ const windows = struct {
 
         // Disable SIO_UDP_CONNRESET behaviour for UDP
         //
-        // This resolves an issue where "recvfrom" can return a WSAECONNRESET error if a previous send
-        // call failed and resulted in an ICMP Port Unreachable message.
+        // This resolves an issue where "recvfrom" can return a WSAECONNRESET error if a previous
+        // send call failed and resulted in an ICMP Port Unreachable message.
         // https://github.com/MasterQ32/zig-network/issues/66
         if (socket_type == std.posix.SOCK.DGRAM) {
             // This was based off the following Go code:
@@ -1462,7 +1499,17 @@ const windows = struct {
             const SIO_UDP_CONNRESET = IOC_IN | IOC_VENDOR | 12;
             const flag = &[_]u8{ 0, 0, 0, 0 };
             var ret: u32 = 0;
-            switch (ws2_32.WSAIoctl(sock, SIO_UDP_CONNRESET, flag.ptr, flag.len, null, 0, &ret, null, null)) {
+            switch (ws2_32.WSAIoctl(
+                sock,
+                SIO_UDP_CONNRESET,
+                flag.ptr,
+                flag.len,
+                null,
+                0,
+                &ret,
+                null,
+                null,
+            )) {
                 0 => {},
                 ws2_32.SOCKET_ERROR => switch (ws2_32.WSAGetLastError()) {
                     else => |err| return unexpectedWSAError(err),
@@ -1474,184 +1521,19 @@ const windows = struct {
         return sock;
     }
 
-    // @TODO Make this, listen, accept, bind etc (all but recv and sendto) asynchronous
-    fn connect(sock: ws2_32.SOCKET, sock_addr: *const std.posix.sockaddr, len: std.posix.socklen_t) std.posix.ConnectError!void {
-        while (true) if (ws2_32.connect(sock, sock_addr, @intCast(len)) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEACCES => error.PermissionDenied,
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAEINPROGRESS => error.WouldBlock,
-                .WSAEALREADY => unreachable,
-                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
-                .WSAECONNREFUSED => error.ConnectionRefused,
-                .WSAEFAULT => unreachable,
-                .WSAEINTR => continue,
-                .WSAEISCONN => unreachable,
-                .WSAENETUNREACH => error.NetworkUnreachable,
-                .WSAEHOSTUNREACH => error.NetworkUnreachable,
-                .WSAENOTSOCK => unreachable,
-                .WSAEWOULDBLOCK, .WSAETIMEDOUT => error.WouldBlock,
-                else => |err| return unexpectedWSAError(err),
-            };
-        } else return;
-    }
-
-    fn close(sock: ws2_32.SOCKET) void {
-        if (ws2_32.closesocket(sock) != 0) {
-            switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTSOCK => unreachable,
-                .WSAEINPROGRESS => unreachable,
-                else => return,
-            }
-        }
-    }
-
-    fn sendto(
-        sock: ws2_32.SOCKET,
-        buf: []const u8,
-        flags: u32,
-        dest_addr: ?*const std.posix.sockaddr,
-        addrlen: std.posix.socklen_t,
-    ) Socket.SendError!usize {
-        while (true) {
-            const result = funcs.sendto(sock, buf.ptr, @intCast(buf.len), @intCast(flags), dest_addr, addrlen);
-            if (result == ws2_32.SOCKET_ERROR) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEACCES => error.AccessDenied,
-                    .WSAECONNRESET => error.ConnectionResetByPeer,
-                    .WSAEDESTADDRREQ => unreachable,
-                    .WSAEFAULT => unreachable,
-                    .WSAEINTR => continue,
-                    .WSAEINVAL => unreachable,
-                    .WSAEMSGSIZE => error.MessageTooBig,
-                    .WSAENOBUFS => error.SystemResources,
-                    .WSAENOTCONN => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAEOPNOTSUPP => unreachable,
-                    .WSAETIMEDOUT => error.WouldBlock,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return @intCast(result);
-        }
-    }
-
-    fn send(
-        sock: ws2_32.SOCKET,
-        buf: []const u8,
-        flags: u32,
-    ) Socket.SendError!usize {
-        return sendto(sock, buf, flags, null, 0);
-    }
-
-    fn recvfrom(
-        sock: ws2_32.SOCKET,
-        buf: []u8,
-        flags: u32,
-        src_addr: ?*std.posix.sockaddr,
-        addrlen: ?*std.posix.socklen_t,
-    ) std.posix.RecvFromError!usize {
-        while (true) {
-            const result = funcs.recvfrom(sock, buf.ptr, @intCast(buf.len), @intCast(flags), src_addr, addrlen);
-            if (result == ws2_32.SOCKET_ERROR) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEFAULT => unreachable,
-                    .WSAEINVAL => unreachable,
-                    .WSAEISCONN => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAESHUTDOWN => unreachable,
-                    .WSAEOPNOTSUPP => unreachable,
-                    .WSAETIMEDOUT, .WSAEWOULDBLOCK => error.WouldBlock,
-                    .WSAEINTR => continue,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return @intCast(result);
-        }
-    }
-
-    // TODO: std.posix.ListenError is not pub.
-    const ListenError = error{
-        AddressInUse,
-        FileDescriptorNotASocket,
-        OperationNotSupported,
-    } || std.posix.UnexpectedError;
-
-    fn listen(sock: ws2_32.SOCKET, backlog: u32) ListenError!void {
-        const rc = funcs.listen(sock, @intCast(backlog));
-        if (rc != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAENOTSOCK => error.FileDescriptorNotASocket,
-                .WSAEOPNOTSUPP => error.OperationNotSupported,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    /// Ignores flags
-    fn accept4(
-        sock: ws2_32.SOCKET,
-        addr: ?*std.posix.sockaddr,
-        addr_size: *std.posix.socklen_t,
-        flags: u32,
-    ) std.posix.AcceptError!ws2_32.SOCKET {
-        _ = flags;
-        while (true) {
-            const result = funcs.accept(sock, addr, addr_size);
-            if (result == ws2_32.INVALID_SOCKET) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEINTR => continue,
-                    .WSAEWOULDBLOCK => error.WouldBlock,
-                    .WSAECONNRESET => error.ConnectionAborted,
-                    .WSAEFAULT => unreachable,
-                    .WSAEINVAL => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAEMFILE => error.ProcessFdQuotaExceeded,
-                    .WSAENOBUFS => error.SystemResources,
-                    .WSAEOPNOTSUPP => unreachable,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-
-            return result;
-        }
-    }
-
-    fn setsockopt(sock: ws2_32.SOCKET, level: u32, optname: u32, opt: []const u8) std.posix.SetSockOptError!void {
-        if (funcs.setsockopt(sock, @intCast(level), @intCast(optname), opt.ptr, @intCast(opt.len)) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTSOCK => unreachable,
-                .WSAEINVAL => unreachable,
-                .WSAEFAULT => unreachable,
-                .WSAENOPROTOOPT => error.InvalidProtocolOption,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    fn getsockname(sock: ws2_32.SOCKET, addr: *std.posix.sockaddr, addrlen: *std.posix.socklen_t) std.posix.GetSockNameError!void {
-        if (funcs.getsockname(sock, addr, addrlen) != 0) {
-            return unexpectedWSAError(ws2_32.WSAGetLastError());
-        }
-    }
-
-    fn getpeername(sock: ws2_32.SOCKET, addr: *std.posix.sockaddr, addrlen: *std.posix.socklen_t) GetPeerNameError!void {
-        if (funcs.getpeername(sock, addr, addrlen) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTCONN => error.NotConnected,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
     pub const SelectError = error{FileDescriptorNotASocket} || std.posix.UnexpectedError;
 
-    fn select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: ?*const timeval) SelectError!usize {
+    fn select(
+        nfds: usize,
+        read_fds: ?[*]u8,
+        write_fds: ?[*]u8,
+        except_fds: ?[*]u8,
+        timeout: ?*const timeval,
+    ) SelectError!usize {
         _ = nfds;
         while (true) {
             // Windows ignores nfds so we just pass zero here.
-            const result = funcs.select(0, read_fds, write_fds, except_fds, timeout);
+            const result = ws2_32.select(0, read_fds, write_fds, except_fds, timeout);
             if (result == ws2_32.SOCKET_ERROR) {
                 return switch (ws2_32.WSAGetLastError()) {
                     .WSAEFAULT => unreachable,
@@ -1662,20 +1544,6 @@ const windows = struct {
                 };
             }
             return @intCast(result);
-        }
-    }
-
-    fn bind(sock: ws2_32.SOCKET, addr: *const std.posix.sockaddr, namelen: std.posix.socklen_t) std.posix.BindError!void {
-        if (funcs.bind(sock, addr, namelen) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEACCES => error.AccessDenied,
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAEINVAL => unreachable,
-                .WSAENOTSOCK => unreachable,
-                .WSAEADDRNOTAVAIL => error.AddressNotAvailable,
-                .WSAEFAULT => unreachable,
-                else => |err| return unexpectedWSAError(err),
-            };
         }
     }
 

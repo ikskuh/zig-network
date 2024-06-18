@@ -19,7 +19,12 @@ test "Connect to an echo server" {
     try network.init();
     defer network.deinit();
 
-    const sock = try network.connectToHost(std.heap.page_allocator, "tcpbin.com", 4242, .tcp);
+    const sock = try network.connectToHost(
+        std.heap.page_allocator,
+        "tcpbin.com",
+        4242,
+        .tcp,
+    );
     defer sock.close();
 
     const msg = "Hi from socket!\n";

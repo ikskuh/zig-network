@@ -630,16 +630,26 @@ pub const Socket = struct {
         }
 
         switch (target.toSocketAddress()) {
-            .ipv4 => |sockaddr| try std.posix.connect(
+            .ipv4 => |sockaddr| std.posix.connect(
                 self.internal,
                 @ptrCast(&sockaddr),
                 @sizeOf(@TypeOf(sockaddr)),
-            ),
-            .ipv6 => |sockaddr| try std.posix.connect(
+            ) catch |e| {
+                if (is_windows and e == error.ConnectionTimedOut) {
+                    return error.WouldBlock;
+                }
+                return e;
+            },
+            .ipv6 => |sockaddr| std.posix.connect(
                 self.internal,
                 @ptrCast(&sockaddr),
                 @sizeOf(@TypeOf(sockaddr)),
-            ),
+            ) catch |e| {
+                if (is_windows and e == error.ConnectionTimedOut) {
+                    return error.WouldBlock;
+                }
+                return e;
+            },
         }
         self.endpoint = target;
     }
@@ -660,12 +670,17 @@ pub const Socket = struct {
         const flags = 0;
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        const fd = try std.posix.accept(
+        const fd = std.posix.accept(
             self.internal,
             addr_ptr,
             &addr_size,
             flags,
-        );
+        ) catch |e| {
+            if (is_windows and e == error.ConnectionTimedOut) {
+                return error.WouldBlock;
+            }
+            return e;
+        };
         errdefer std.posix.close(fd);
 
         return Socket{
@@ -687,7 +702,18 @@ pub const Socket = struct {
     /// Will not change the stream state.
     pub fn peek(self: Self, data: []u8) ReceiveError!usize {
         const flags = if (is_windows) 0x2 else std.os.linux.MSG.PEEK;
-        return try std.posix.recvfrom(self.internal, data, flags, null, null);
+        return try std.posix.recvfrom(
+            self.internal,
+            data,
+            flags,
+            null,
+            null,
+        ) catch |e| {
+            if (is_windows and e == error.ConnectionTimedOut) {
+                return error.WouldBlock;
+            }
+            return e;
+        };
     }
 
     /// Blockingly receives some data from the connected peer.
@@ -697,7 +723,18 @@ pub const Socket = struct {
             0
         else
             std.os.linux.MSG.NOSIGNAL;
-        return try std.posix.recvfrom(self.internal, data, flags, null, null);
+        return std.posix.recvfrom(
+            self.internal,
+            data,
+            flags,
+            null,
+            null,
+        ) catch |e| {
+            if (is_windows and e == error.ConnectionTimedOut) {
+                return error.WouldBlock;
+            }
+            return e;
+        };
     }
 
     const ReceiveFrom = struct { numberOfBytes: usize, sender: EndPoint };
@@ -712,13 +749,18 @@ pub const Socket = struct {
         var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        const len = try std.posix.recvfrom(
+        const len = std.posix.recvfrom(
             self.internal,
             data,
             flags | if (is_windows) 0 else 4,
             addr_ptr,
             &size,
-        );
+        ) catch |e| {
+            if (is_windows and e == error.ConnectionTimedOut) {
+                return error.WouldBlock;
+            }
+            return e;
+        };
 
         return ReceiveFrom{
             .numberOfBytes = len,
@@ -732,20 +774,30 @@ pub const Socket = struct {
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
-            .ipv4 => |sockaddr| try std.posix.sendto(
+            .ipv4 => |sockaddr| std.posix.sendto(
                 self.internal,
                 data,
                 flags,
                 @ptrCast(&sockaddr),
                 @sizeOf(@TypeOf(sockaddr)),
-            ),
-            .ipv6 => |sockaddr| try std.posix.sendto(
+            ) catch |e| {
+                if (is_windows and e == error.ConnectionTimedOut) {
+                    return error.WouldBlock;
+                }
+                return e;
+            },
+            .ipv6 => |sockaddr| std.posix.sendto(
                 self.internal,
                 data,
                 flags,
                 @ptrCast(&sockaddr),
                 @sizeOf(@TypeOf(sockaddr)),
-            ),
+            ) catch |e| {
+                if (is_windows and e == error.ConnectionTimedOut) {
+                    return error.WouldBlock;
+                }
+                return e;
+            },
         };
     }
 
@@ -841,13 +893,13 @@ pub const SocketEvent = struct {
 pub const SocketSet = struct {
     const Self = @This();
 
-    internal: OSLogic,
+    internal: OsLogic,
 
     /// Initialize a new socket set. This can be reused for multiple queries without having to
     /// reset the set every time.
     /// Call `deinit()` to free the socket set.
     pub fn init(allocator: std.mem.Allocator) !Self {
-        return Self{ .internal = try OSLogic.init(allocator) };
+        return Self{ .internal = try OsLogic.init(allocator) };
     }
 
     /// Frees the contained resources.
@@ -891,16 +943,16 @@ pub const SocketSet = struct {
 
 /// Implementation of SocketSet for each platform, keeps the thing above nice and clean.
 /// All functions get inlined.
-const OSLogic = switch (builtin.os.tag) {
-    .windows => WindowsOSLogic,
-    .linux => LinuxOSLogic,
+const OsLogic = switch (builtin.os.tag) {
+    .windows => WindowsOsLogic,
+    .linux => LinuxOsLogic,
     .macos, .ios, .watchos, .tvos => DarwinOsLogic,
     else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
 };
 
 // Linux uses `poll()` syscall to wait for socket events.
 // This allows an arbitrary number of sockets to be handled.
-const LinuxOSLogic = struct {
+const LinuxOsLogic = struct {
     const Self = @This();
     // use poll on linux
 
@@ -973,10 +1025,10 @@ const LinuxOSLogic = struct {
 
 /// Alias to LinuxOSLogic as the logic between the two are shared and both
 /// support poll()
-const DarwinOsLogic = LinuxOSLogic;
+const DarwinOsLogic = LinuxOsLogic;
 
 // On windows, we use select()
-const WindowsOSLogic = struct {
+const WindowsOsLogic = struct {
     // The windows struct fd_set uses a statically size array of 64 sockets by default. However, it
     // is documented that one can create bigger sets and pass them into the functions that use them.
     // Instead, we dynamically allocate the sets and reallocate them as needed. See
@@ -1239,9 +1291,13 @@ pub fn connectToHost(
 
     for (endpoint_list.endpoints) |endpt| {
         var sock = try Socket.create(@as(AddressFamily, endpt.address), protocol);
-        sock.connect(endpt) catch {
-            sock.close();
-            continue;
+        sock.connect(endpt) catch |e| {
+            switch (e) {
+                else => {
+                    sock.close();
+                    continue;
+                },
+            }
         };
         return sock;
     }

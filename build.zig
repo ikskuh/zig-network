@@ -7,6 +7,9 @@ pub fn build(b: *std.Build) !void {
     const module = b.addModule("network", .{
         .root_source_file = b.path("network.zig"),
     });
+    if (target.result.os.tag == .windows) {
+        module.link_libc = true;
+    }
 
     var test_runner = b.addTest(.{
         .root_source_file = b.path("testsuite.zig"),

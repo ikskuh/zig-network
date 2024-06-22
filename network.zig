@@ -16,7 +16,7 @@ const is_netbsd = builtin.os.tag == .netbsd;
 const is_dragonfly = builtin.os.tag == .dragonfly;
 
 // use these to test collections of OS type
-const is_bsd = is_darwin or is_freebsd or is_openbsd or is_netbsd or is_dragonfly;
+const is_bsd = builtin.os.tag.isBSD();
 const is_unix = is_bsd or is_linux;
 
 pub fn init() error{InitializationError}!void {
@@ -209,7 +209,7 @@ pub const Address = union(AddressFamily) {
                 return error.InvalidFormat;
             }
 
-            var ip: IPv6 = .{ .value = undefined, .scope_id = undefined };
+            var ip: IPv6 = .{ .value = undefined, .scope_id = 0 };
             // Group index of abbreviation, to know how many groups have been
             // abbreviated.
             var abbreviated: ?u3 = null;
@@ -233,11 +233,9 @@ pub const Address = union(AddressFamily) {
                         }
 
                         var abbreviation_ending: bool = false;
-                        if (abbreviated) |index| {
-                            if (index == cg_index) {
-                                // This ':' is the second in "::".
-                                abbreviation_ending = true;
-                            }
+                        if (abbreviated != null and abbreviated.? == cg_index) {
+                            // This ':' is the second in "::".
+                            abbreviation_ending = true;
                         }
 
                         // Empty groups are not allowed, unless
@@ -283,7 +281,7 @@ pub const Address = union(AddressFamily) {
                 }
             }
 
-            // Group index, accounting for abbreviations.
+            // Parse groups, after accounting for abbreviations.
             for (groups, 0..) |group, i| {
                 if (group.len > 4) {
                     return error.InvalidFormat;
@@ -310,8 +308,6 @@ pub const Address = union(AddressFamily) {
                     ip.value[i * 2 + 1] = 0;
                 }
             }
-
-            ip.scope_id = 0;
 
             return ip;
         }
@@ -485,10 +481,9 @@ pub const Socket = struct {
     pub const Writer = std.io.Writer(Socket, SendError, send);
 
     const Self = @This();
-    const NativeSocket = if (is_windows) windows.ws2_32.SOCKET else std.posix.fd_t;
 
     family: AddressFamily,
-    internal: NativeSocket,
+    internal: std.posix.socket_t,
     endpoint: ?EndPoint,
 
     /// Spawns a new socket that must be freed with `close()`.
@@ -512,17 +507,22 @@ pub const Socket = struct {
 
     /// Closes the socket and releases its resources.
     pub fn close(self: Self) void {
-        const close_fn = if (is_windows) windows.close else std.posix.close;
-        close_fn(self.internal);
+        std.posix.close(self.internal);
     }
 
     /// Binds the socket to the given end point.
     pub fn bind(self: *Self, ep: EndPoint) !void {
-        const bind_fn = if (is_windows) windows.bind else std.posix.bind;
-
         switch (ep.toSocketAddress()) {
-            .ipv4 => |sockaddr| try bind_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try bind_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try std.posix.bind(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
+            .ipv6 => |sockaddr| try std.posix.bind(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
         }
     }
 
@@ -551,30 +551,32 @@ pub const Socket = struct {
     pub fn setReadTimeout(self: *Self, read: ?u32) !void {
         std.debug.assert(read == null or read.? != 0);
         const micros = read orelse 0;
-        if (is_windows) {
-            var val: u32 = @divTrunc(micros, 1000);
-            try windows.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.asBytes(&val));
-        } else {
-            var read_timeout: std.posix.timeval = undefined;
-            read_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
-            read_timeout.tv_usec = @intCast(@mod(micros, 1000000));
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.RCVTIMEO, std.mem.toBytes(read_timeout)[0..]);
-        }
+        var opt = if (is_windows) @as(u32, @divTrunc(micros, 1000)) else std.posix.timeval{
+            .tv_sec = @intCast(@divTrunc(micros, std.time.us_per_s)),
+            .tv_usec = @intCast(@mod(micros, std.time.us_per_s)),
+        };
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.RCVTIMEO,
+            if (is_windows) std.mem.asBytes(&opt) else std.mem.toBytes(opt)[0..],
+        );
     }
 
     /// Set socket write timeout in microseconds
     pub fn setWriteTimeout(self: *Self, write: ?u32) !void {
         std.debug.assert(write == null or write.? != 0);
         const micros = write orelse 0;
-        if (is_windows) {
-            var val: u32 = @divTrunc(micros, 1000);
-            try windows.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.SNDTIMEO, std.mem.asBytes(&val));
-        } else {
-            var write_timeout: std.posix.timeval = undefined;
-            write_timeout.tv_sec = @intCast(@divTrunc(micros, 1000000));
-            write_timeout.tv_usec = @intCast(@mod(micros, 1000000));
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.SNDTIMEO, std.mem.toBytes(write_timeout)[0..]);
-        }
+        var opt = if (is_windows) @as(u32, @divTrunc(micros, 1000)) else std.posix.timeval{
+            .tv_sec = @intCast(@divTrunc(micros, std.time.us_per_s)),
+            .tv_usec = @intCast(@mod(micros, std.time.us_per_s)),
+        };
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.SNDTIMEO,
+            if (is_windows) std.mem.asBytes(&opt) else std.mem.toBytes(opt)[0..],
+        );
     }
 
     /// Sets the SO_BROADCAST socket option to enable/disable UDP broadcast. Only supported for IPv4.
@@ -582,11 +584,7 @@ pub const Socket = struct {
         std.debug.assert(self.family == .ipv4);
 
         const val: u32 = if (enable) 1 else 0;
-        if (is_windows) {
-            try windows.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, std.mem.asBytes(&val));
-        } else {
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, std.mem.asBytes(&val));
-        }
+        try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, std.posix.SO.BROADCAST, std.mem.asBytes(&val));
     }
 
     /// Connects the UDP or TCP socket to a remote server.
@@ -599,14 +597,41 @@ pub const Socket = struct {
         if (is_bsd) {
             // set the options to ON
             const value: u32 = 1;
-            const SO_NOSIGPIPE = 0x00000800;
-            try std.posix.setsockopt(self.internal, std.posix.SOL.SOCKET, SO_NOSIGPIPE, std.mem.asBytes(&value));
+            try std.posix.setsockopt(
+                self.internal,
+                std.posix.SOL.SOCKET,
+                std.c.SO.NOSIGPIPE,
+                std.mem.asBytes(&value),
+            );
         }
 
-        const connect_fn = if (is_windows) windows.connect else std.posix.connect;
         switch (target.toSocketAddress()) {
-            .ipv4 => |sockaddr| try connect_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try connect_fn(self.internal, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| std.posix.connect(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ) catch |e| {
+                // NOTE: Windows sockets return `ConnectionTimedOut` when equivalent POSIX sockets
+                // return `WouldBlock`. Wrapping Windows socket `ConnectionTimedOut` errors here is
+                // necessary to match behavior for `std.posix.connect` and `std.posix.recvfrom`.
+                if (is_windows and e == std.posix.ConnectError.ConnectionTimedOut) {
+                    return std.posix.ConnectError.WouldBlock;
+                }
+                return e;
+            },
+            .ipv6 => |sockaddr| std.posix.connect(
+                self.internal,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ) catch |e| {
+                // NOTE: Windows sockets return `ConnectionTimedOut` when equivalent POSIX sockets
+                // return `WouldBlock`. Wrapping Windows socket `ConnectionTimedOut` errors here is
+                // necessary to match behavior for `std.posix.connect` and `std.posix.recvfrom`.
+                if (is_windows and e == std.posix.ConnectError.ConnectionTimedOut) {
+                    return std.posix.ConnectError.WouldBlock;
+                }
+                return e;
+            },
         }
         self.endpoint = target;
     }
@@ -615,24 +640,20 @@ pub const Socket = struct {
     /// this socket.
     /// Call `accept()` to handle incoming connections.
     pub fn listen(self: Self) !void {
-        const listen_fn = if (is_windows) windows.listen else std.posix.listen;
-        try listen_fn(self.internal, 0);
+        try std.posix.listen(self.internal, 0);
     }
 
     /// Waits until a new TCP client connects to this socket and accepts the incoming TCP connection.
     /// This function is only allowed for a bound TCP socket. `listen()` must have been called before!
     pub fn accept(self: Self) !Socket {
-        const accept4_fn = if (is_windows) windows.accept4 else std.posix.accept;
-        const close_fn = if (is_windows) windows.close else std.posix.close;
-
         var addr: std.posix.sockaddr.in6 = undefined;
         var addr_size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const flags = 0;
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        const fd = try accept4_fn(self.internal, addr_ptr, &addr_size, flags);
-        errdefer close_fn(fd);
+        const fd = try std.posix.accept(self.internal, addr_ptr, &addr_size, flags);
+        errdefer std.posix.close(fd);
 
         return Socket{
             .family = try AddressFamily.fromNativeAddressFamily(addr_ptr.family),
@@ -647,9 +668,8 @@ pub const Socket = struct {
     pub fn send(self: Self, data: []const u8) SendError!usize {
         if (self.endpoint) |ep|
             return try self.sendTo(ep, data);
-        const send_fn = if (is_windows) windows.send else std.posix.send;
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
-        return try send_fn(self.internal, data, flags);
+        return try std.posix.send(self.internal, data, flags);
     }
 
     /// Non-Blockingly peeks at data from the connected peer.
@@ -693,12 +713,23 @@ pub const Socket = struct {
     /// Sends a packet to a given network end point. Behaves the same as `send()`, but will only work for
     /// for UDP sockets.
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) SendError!usize {
-        const sendto_fn = if (is_windows) windows.sendto else std.posix.sendto;
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
         return switch (receiver.toSocketAddress()) {
-            .ipv4 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
-            .ipv6 => |sockaddr| try sendto_fn(self.internal, data, flags, @ptrCast(&sockaddr), @sizeOf(@TypeOf(sockaddr))),
+            .ipv4 => |sockaddr| try std.posix.sendto(
+                self.internal,
+                data,
+                flags,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
+            .ipv6 => |sockaddr| try std.posix.sendto(
+                self.internal,
+                data,
+                flags,
+                @ptrCast(&sockaddr),
+                @sizeOf(@TypeOf(sockaddr)),
+            ),
         };
     }
 
@@ -706,34 +737,33 @@ pub const Socket = struct {
     /// multiple bindings of the same socket to the same address
     /// on UDP sockets and allows quicker re-binding of TCP sockets.
     pub fn enablePortReuse(self: Self, enabled: bool) !void {
-        const setsockopt_fn = if (is_windows) windows.setsockopt else std.posix.setsockopt;
-
         var opt: c_int = if (enabled) 1 else 0;
-        try setsockopt_fn(self.internal, std.posix.SOL.SOCKET, std.posix.SO.REUSEADDR, std.mem.asBytes(&opt));
+        try std.posix.setsockopt(
+            self.internal,
+            std.posix.SOL.SOCKET,
+            std.posix.SO.REUSEADDR,
+            std.mem.asBytes(&opt),
+        );
     }
 
     /// Retrieves the end point to which the socket is bound.
     pub fn getLocalEndPoint(self: Self) !EndPoint {
-        const getsockname_fn = if (is_windows) windows.getsockname else std.posix.getsockname;
-
         var addr: std.posix.sockaddr.in6 align(4) = undefined;
         var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        try getsockname_fn(self.internal, addr_ptr, &size);
+        try std.posix.getsockname(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
     }
 
     /// Retrieves the end point to which the socket is connected.
     pub fn getRemoteEndPoint(self: Self) !EndPoint {
-        const getpeername_fn = if (is_windows) windows.getpeername else getpeername;
-
         var addr: std.posix.sockaddr.in6 align(4) = undefined;
         var size: std.posix.socklen_t = @sizeOf(std.posix.sockaddr.in6);
 
         const addr_ptr: *std.posix.sockaddr = @ptrCast(&addr);
-        try getpeername_fn(self.internal, addr_ptr, &size);
+        try std.posix.getpeername(self.internal, addr_ptr, &size);
 
         return try EndPoint.fromSocketAddress(addr_ptr, size);
     }
@@ -747,8 +777,6 @@ pub const Socket = struct {
     /// Multicast enables sending packets to the group and all joined peers
     /// will receive the sent data.
     pub fn joinMulticastGroup(self: Self, group: MulticastGroup) !void {
-        const setsockopt_fn = if (is_windows) windows.setsockopt else std.posix.setsockopt;
-
         const ip_mreq = extern struct {
             imr_multiaddr: u32,
             imr_address: u32,
@@ -764,7 +792,12 @@ pub const Socket = struct {
         const IP_ADD_MEMBERSHIP = if (is_windows) 5 else if (is_bsd) 12 else 35;
         const level = if (is_bsd) std.posix.IPPROTO.IP else std.posix.SOL.SOCKET;
 
-        try setsockopt_fn(self.internal, level, IP_ADD_MEMBERSHIP, std.mem.asBytes(&request));
+        try std.posix.setsockopt(
+            self.internal,
+            level,
+            IP_ADD_MEMBERSHIP,
+            std.mem.asBytes(&request),
+        );
     }
 
     /// Gets an reader that allows reading data from the socket.
@@ -1022,11 +1055,8 @@ const WindowsOSLogic = struct {
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        // TODO: https://github.com/ziglang/zig/issues/5391
-        var read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
-        var write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET){};
-        try read_fds.ensureTotalCapacity(allocator, 8);
-        try write_fds.ensureTotalCapacity(allocator, 8);
+        const read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
+        const write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
 
         return Self{
             .allocator = allocator,
@@ -1150,52 +1180,11 @@ const WindowsOSLogic = struct {
 /// actual timeout interval shall be rounded up to the next supported value.
 pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
     switch (builtin.os.tag) {
-        .windows => {
-            const read_set = try set.internal.getFdSet(.read);
-            const write_set = try set.internal.getFdSet(.write);
-            const except_set = try set.internal.getFdSet(.except);
-            if (read_set == null and write_set == null and except_set == null) return 0;
-
-            const tm: windows.timeval = if (timeout) |tout| block: {
-                const secs = @divFloor(tout, std.time.ns_per_s);
-                const usecs = @divFloor(tout - secs * std.time.ns_per_s, 1000);
-                break :block .{ .tv_sec = @intCast(secs), .tv_usec = @intCast(usecs) };
-            } else .{ .tv_sec = 0, .tv_usec = 0 };
-
-            // Windows ignores first argument.
-            return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
-        },
-        .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
+        .windows, .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
             set.internal.fds.items,
             if (timeout) |val| @as(i32, @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms)) else -1,
         ),
         else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
-    }
-}
-
-const GetPeerNameError = error{
-    /// Insufficient resources were available in the system to perform the operation.
-    SystemResources,
-    NotConnected,
-} || std.posix.UnexpectedError;
-
-const MissingCApi = struct {
-    extern "c" fn getpeername(sockfd: std.posix.fd_t, noalias addr: *std.posix.sockaddr, noalias addrlen: *std.posix.socklen_t) c_int;
-};
-
-fn getpeername(sockfd: std.posix.fd_t, addr: *std.posix.sockaddr, addrlen: *std.posix.socklen_t) GetPeerNameError!void {
-    const getpeername_fix = if (std.posix.system == std.c) MissingCApi.getpeername else std.posix.system.getpeername;
-
-    switch (std.posix.errno(getpeername_fix(sockfd, addr, addrlen))) {
-        .SUCCESS => return,
-        else => |err| return std.posix.unexpectedErrno(err),
-
-        .BADF => unreachable, // always a race condition
-        .FAULT => unreachable,
-        .INVAL => unreachable, // invalid parameters
-        .NOTSOCK => unreachable,
-        .NOBUFS => return error.SystemResources,
-        .NOTCONN => return error.NotConnected,
     }
 }
 
@@ -1255,7 +1244,10 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
-        const AI_NUMERICSERV = if (is_windows) 0x00000008 else std.c.AI.NUMERICSERV;
+        const AI_NUMERICSERV = if (is_windows)
+            windows.ws2_32.AI.NUMERICSERV
+        else
+            std.c.AI.NUMERICSERV;
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
@@ -1424,21 +1416,14 @@ const windows = struct {
     };
 
     const funcs = struct {
-        extern "ws2_32" fn sendto(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int, to: [*c]const std.posix.sockaddr, tolen: std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn send(s: ws2_32.SOCKET, buf: [*c]const u8, len: c_int, flags: c_int) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn listen(s: ws2_32.SOCKET, backlog: c_int) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn accept(s: ws2_32.SOCKET, addr: [*c]std.posix.sockaddr, addrlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) ws2_32.SOCKET;
-        extern "ws2_32" fn setsockopt(s: ws2_32.SOCKET, level: c_int, optname: c_int, optval: [*c]const u8, optlen: c_int) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn getsockname(s: ws2_32.SOCKET, name: [*c]std.posix.sockaddr, namelen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn getpeername(s: ws2_32.SOCKET, name: [*c]std.posix.sockaddr, namelen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
-        extern "ws2_32" fn bind(s: ws2_32.SOCKET, addr: [*c]const std.posix.sockaddr, namelen: std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const addrinfo, result: **addrinfo) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(std.os.windows.WINAPI) void;
     };
 
+    // TODO: This can be removed in favor of upstream Zig `std.posix.socket` if the
+    // `std.posix.socket` implementation handles `std.posix.SOCK.DGRAM`.
     fn socket(addr_family: u32, socket_type: u32, protocol: u32) std.posix.SocketError!ws2_32.SOCKET {
         const sock = try WSASocketW(
             @intCast(addr_family),
@@ -1453,7 +1438,7 @@ const windows = struct {
         //
         // This resolves an issue where "recvfrom" can return a WSAECONNRESET error if a previous send
         // call failed and resulted in an ICMP Port Unreachable message.
-        // https://github.com/MasterQ32/zig-network/issues/66
+        // https://github.com/ikskuh/zig-network/issues/66
         if (socket_type == std.posix.SOCK.DGRAM) {
             // This was based off the following Go code:
             // https://github.com/golang/go/blob/5c154986094bcc2fb28909cc5f01c9ba1dd9ddd4/src/internal/poll/fd_windows.go#L338
@@ -1474,76 +1459,9 @@ const windows = struct {
         return sock;
     }
 
-    // @TODO Make this, listen, accept, bind etc (all but recv and sendto) asynchronous
-    fn connect(sock: ws2_32.SOCKET, sock_addr: *const std.posix.sockaddr, len: std.posix.socklen_t) std.posix.ConnectError!void {
-        while (true) if (ws2_32.connect(sock, sock_addr, @intCast(len)) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEACCES => error.PermissionDenied,
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAEINPROGRESS => error.WouldBlock,
-                .WSAEALREADY => unreachable,
-                .WSAEAFNOSUPPORT => error.AddressFamilyNotSupported,
-                .WSAECONNREFUSED => error.ConnectionRefused,
-                .WSAEFAULT => unreachable,
-                .WSAEINTR => continue,
-                .WSAEISCONN => unreachable,
-                .WSAENETUNREACH => error.NetworkUnreachable,
-                .WSAEHOSTUNREACH => error.NetworkUnreachable,
-                .WSAENOTSOCK => unreachable,
-                .WSAEWOULDBLOCK, .WSAETIMEDOUT => error.WouldBlock,
-                else => |err| return unexpectedWSAError(err),
-            };
-        } else return;
-    }
-
-    fn close(sock: ws2_32.SOCKET) void {
-        if (ws2_32.closesocket(sock) != 0) {
-            switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTSOCK => unreachable,
-                .WSAEINPROGRESS => unreachable,
-                else => return,
-            }
-        }
-    }
-
-    fn sendto(
-        sock: ws2_32.SOCKET,
-        buf: []const u8,
-        flags: u32,
-        dest_addr: ?*const std.posix.sockaddr,
-        addrlen: std.posix.socklen_t,
-    ) Socket.SendError!usize {
-        while (true) {
-            const result = funcs.sendto(sock, buf.ptr, @intCast(buf.len), @intCast(flags), dest_addr, addrlen);
-            if (result == ws2_32.SOCKET_ERROR) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEACCES => error.AccessDenied,
-                    .WSAECONNRESET => error.ConnectionResetByPeer,
-                    .WSAEDESTADDRREQ => unreachable,
-                    .WSAEFAULT => unreachable,
-                    .WSAEINTR => continue,
-                    .WSAEINVAL => unreachable,
-                    .WSAEMSGSIZE => error.MessageTooBig,
-                    .WSAENOBUFS => error.SystemResources,
-                    .WSAENOTCONN => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAEOPNOTSUPP => unreachable,
-                    .WSAETIMEDOUT => error.WouldBlock,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return @intCast(result);
-        }
-    }
-
-    fn send(
-        sock: ws2_32.SOCKET,
-        buf: []const u8,
-        flags: u32,
-    ) Socket.SendError!usize {
-        return sendto(sock, buf, flags, null, 0);
-    }
-
+    // NOTE: The `recvfrom` implementation in upstream Zig `std` is marked as
+    // an `extern "c"` function, and thus replacing the below implementation
+    // causes Windows to require linking `libc`.
     fn recvfrom(
         sock: ws2_32.SOCKET,
         buf: []u8,
@@ -1567,115 +1485,6 @@ const windows = struct {
                 };
             }
             return @intCast(result);
-        }
-    }
-
-    // TODO: std.posix.ListenError is not pub.
-    const ListenError = error{
-        AddressInUse,
-        FileDescriptorNotASocket,
-        OperationNotSupported,
-    } || std.posix.UnexpectedError;
-
-    fn listen(sock: ws2_32.SOCKET, backlog: u32) ListenError!void {
-        const rc = funcs.listen(sock, @intCast(backlog));
-        if (rc != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAENOTSOCK => error.FileDescriptorNotASocket,
-                .WSAEOPNOTSUPP => error.OperationNotSupported,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    /// Ignores flags
-    fn accept4(
-        sock: ws2_32.SOCKET,
-        addr: ?*std.posix.sockaddr,
-        addr_size: *std.posix.socklen_t,
-        flags: u32,
-    ) std.posix.AcceptError!ws2_32.SOCKET {
-        _ = flags;
-        while (true) {
-            const result = funcs.accept(sock, addr, addr_size);
-            if (result == ws2_32.INVALID_SOCKET) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEINTR => continue,
-                    .WSAEWOULDBLOCK => error.WouldBlock,
-                    .WSAECONNRESET => error.ConnectionAborted,
-                    .WSAEFAULT => unreachable,
-                    .WSAEINVAL => unreachable,
-                    .WSAENOTSOCK => unreachable,
-                    .WSAEMFILE => error.ProcessFdQuotaExceeded,
-                    .WSAENOBUFS => error.SystemResources,
-                    .WSAEOPNOTSUPP => unreachable,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-
-            return result;
-        }
-    }
-
-    fn setsockopt(sock: ws2_32.SOCKET, level: u32, optname: u32, opt: []const u8) std.posix.SetSockOptError!void {
-        if (funcs.setsockopt(sock, @intCast(level), @intCast(optname), opt.ptr, @intCast(opt.len)) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTSOCK => unreachable,
-                .WSAEINVAL => unreachable,
-                .WSAEFAULT => unreachable,
-                .WSAENOPROTOOPT => error.InvalidProtocolOption,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    fn getsockname(sock: ws2_32.SOCKET, addr: *std.posix.sockaddr, addrlen: *std.posix.socklen_t) std.posix.GetSockNameError!void {
-        if (funcs.getsockname(sock, addr, addrlen) != 0) {
-            return unexpectedWSAError(ws2_32.WSAGetLastError());
-        }
-    }
-
-    fn getpeername(sock: ws2_32.SOCKET, addr: *std.posix.sockaddr, addrlen: *std.posix.socklen_t) GetPeerNameError!void {
-        if (funcs.getpeername(sock, addr, addrlen) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAENOTCONN => error.NotConnected,
-                else => |err| return unexpectedWSAError(err),
-            };
-        }
-    }
-
-    pub const SelectError = error{FileDescriptorNotASocket} || std.posix.UnexpectedError;
-
-    fn select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: ?*const timeval) SelectError!usize {
-        _ = nfds;
-        while (true) {
-            // Windows ignores nfds so we just pass zero here.
-            const result = funcs.select(0, read_fds, write_fds, except_fds, timeout);
-            if (result == ws2_32.SOCKET_ERROR) {
-                return switch (ws2_32.WSAGetLastError()) {
-                    .WSAEFAULT => unreachable,
-                    .WSAEINVAL => unreachable,
-                    .WSAEINTR => continue,
-                    .WSAENOTSOCK => error.FileDescriptorNotASocket,
-                    else => |err| return unexpectedWSAError(err),
-                };
-            }
-            return @intCast(result);
-        }
-    }
-
-    fn bind(sock: ws2_32.SOCKET, addr: *const std.posix.sockaddr, namelen: std.posix.socklen_t) std.posix.BindError!void {
-        if (funcs.bind(sock, addr, namelen) != 0) {
-            return switch (ws2_32.WSAGetLastError()) {
-                .WSAEACCES => error.AccessDenied,
-                .WSAEADDRINUSE => error.AddressInUse,
-                .WSAEINVAL => unreachable,
-                .WSAENOTSOCK => unreachable,
-                .WSAEADDRNOTAVAIL => error.AddressNotAvailable,
-                .WSAEFAULT => unreachable,
-                else => |err| return unexpectedWSAError(err),
-            };
         }
     }
 

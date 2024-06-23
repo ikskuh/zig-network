@@ -1055,8 +1055,8 @@ const WindowsOSLogic = struct {
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        const read_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
-        const write_fds = std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
+        const read_fds = try std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
+        const write_fds = try std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
 
         return Self{
             .allocator = allocator,
@@ -1180,7 +1180,22 @@ const WindowsOSLogic = struct {
 /// actual timeout interval shall be rounded up to the next supported value.
 pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
     switch (builtin.os.tag) {
-        .windows, .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
+        .windows => {
+            const read_set = try set.internal.getFdSet(.read);
+            const write_set = try set.internal.getFdSet(.write);
+            const except_set = try set.internal.getFdSet(.except);
+            if (read_set == null and write_set == null and except_set == null) return 0;
+
+            const tm: windows.timeval = if (timeout) |tout| block: {
+                const secs = @divFloor(tout, std.time.ns_per_s);
+                const usecs = @divFloor(tout - secs * std.time.ns_per_s, 1000);
+                break :block .{ .tv_sec = @intCast(secs), .tv_usec = @intCast(usecs) };
+            } else .{ .tv_sec = 0, .tv_usec = 0 };
+
+            // Windows ignores first argument.
+            return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
+        },
+        .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
             set.internal.fds.items,
             if (timeout) |val| @as(i32, @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms)) else -1,
         ),
@@ -1417,6 +1432,7 @@ const windows = struct {
 
     const funcs = struct {
         extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
+        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
         extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const addrinfo, result: **addrinfo) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(std.os.windows.WINAPI) void;
@@ -1481,6 +1497,26 @@ const windows = struct {
                     .WSAEOPNOTSUPP => unreachable,
                     .WSAETIMEDOUT, .WSAEWOULDBLOCK => error.WouldBlock,
                     .WSAEINTR => continue,
+                    else => |err| return unexpectedWSAError(err),
+                };
+            }
+            return @intCast(result);
+        }
+    }
+
+    pub const SelectError = error{FileDescriptorNotASocket} || std.posix.UnexpectedError;
+
+    fn select(nfds: usize, read_fds: ?[*]u8, write_fds: ?[*]u8, except_fds: ?[*]u8, timeout: ?*const timeval) SelectError!usize {
+        _ = nfds;
+        while (true) {
+            // Windows ignores nfds so we just pass zero here.
+            const result = funcs.select(0, read_fds, write_fds, except_fds, timeout);
+            if (result == ws2_32.SOCKET_ERROR) {
+                return switch (ws2_32.WSAGetLastError()) {
+                    .WSAEFAULT => unreachable,
+                    .WSAEINVAL => unreachable,
+                    .WSAEINTR => continue,
+                    .WSAENOTSOCK => error.FileDescriptorNotASocket,
                     else => |err| return unexpectedWSAError(err),
                 };
             }

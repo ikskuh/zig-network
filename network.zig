@@ -824,7 +824,7 @@ pub const SocketEvent = struct {
 /// A set of sockets that can be used to query socket readiness.
 /// This is similar to `select()´ or `poll()` and provides a way to
 /// create non-blocking socket I/O.
-/// This is intented to be used with `waitForSocketEvents()`.
+/// This is intended to be used with `waitForSocketEvents()`.
 pub const SocketSet = struct {
     const Self = @This();
 

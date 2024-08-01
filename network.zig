@@ -1259,10 +1259,10 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
-        const AI_NUMERICSERV = if (is_windows)
-            windows.ws2_32.AI.NUMERICSERV
+        const AI = if (is_windows)
+            windows.ws2_32.AI{ .NUMERICSERV = true }
         else
-            std.c.AI.NUMERICSERV;
+            std.c.AI{ .NUMERICSERV = true };
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
@@ -1271,7 +1271,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         defer allocator.free(port_c);
 
         const hints = addrinfo{
-            .flags = AI_NUMERICSERV,
+            .flags = @bitCast(AI),
             .family = std.posix.AF.UNSPEC,
             .socktype = std.posix.SOCK.STREAM,
             .protocol = std.posix.IPPROTO.TCP,

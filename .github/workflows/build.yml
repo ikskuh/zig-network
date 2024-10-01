@@ -33,6 +33,7 @@ jobs:
         uses: mlugg/setup-zig@v1
         with:
           version: master
+          cache: false
 
       - name: Compile and test synchronous
         run: |

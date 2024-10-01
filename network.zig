@@ -1265,7 +1265,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         @memset(&ai, 0);
         ai.NUMERICSERV = nc;
 
-        const AI_NUMERICSERV: i32 = ai;
+        const AI_NUMERICSERV: i32 = @bitCast(ai);
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);

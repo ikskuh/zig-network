@@ -1259,7 +1259,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
-        const AI_NUMERICSERV = if (is_windows)
+        const AI_NUMERICSERV: bool = if (is_windows)
             windows.ws2_32.AI.NUMERICSERV
         else
             std.c.AI.NUMERICSERV;

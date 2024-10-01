@@ -1260,12 +1260,10 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
         const AI = if (is_windows) windows.ws2_32.AI else std.c.AI;
-        const ai: AI = .{};
-        const nc = ai.NUMERICSERV;
-        @memset(&ai, 0);
-        ai.NUMERICSERV = nc;
-
-        const AI_NUMERICSERV: i32 = @bitCast(ai);
+        var AI_NUMERICSERV:i32 = 0;
+        const ai: AI = @bitCast(AI_NUMERICSERV);
+        ai.NUMERICSERV = true;
+        AI_NUMERICSERV = @bitCast(ai);
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);

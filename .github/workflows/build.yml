@@ -7,7 +7,7 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    - cron: '0 5 * * *' # run at 5 AM UTC, continous integration against master branch
+    - cron: '0 5 * * *' # run at 5 AM UTC, continuous integration against master branch
 
 jobs:
   build:

@@ -1,7 +1,6 @@
 const std = @import("std");
 const os = @import("os");
 const builtin = @import("builtin");
-const native_os = builtin.os.tag;
 const posix = std.posix;
 
 comptime {
@@ -1278,7 +1277,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
             .next = null,
         };
 
-        var res: ?*addrinfo = undefined;
+        var res: ?*posix.addrinfo = undefined;
         try getaddrinfo_fn(name_c.ptr, @ptrCast(port_c.ptr), &hints, &res);
         defer if (res) |r| freeaddrinfo_fn(r);
 

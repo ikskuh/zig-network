@@ -1415,23 +1415,23 @@ const windows = struct {
         tv_usec: c_long,
     };
 
-    const addrinfo = extern struct {
-        flags: i32,
-        family: i32,
-        socktype: i32,
-        protocol: i32,
-        addrlen: std.posix.socklen_t,
-        canonname: ?[*:0]u8,
-        addr: ?*std.posix.sockaddr,
-        next: ?*addrinfo,
-    };
+    // const addrinfo = extern struct {
+    //     flags: i32,
+    //     family: i32,
+    //     socktype: i32,
+    //     protocol: i32,
+    //     addrlen: std.posix.socklen_t,
+    //     canonname: ?[*:0]u8,
+    //     addr: ?*std.posix.sockaddr,
+    //     next: ?*addrinfo,
+    // };
 
     const funcs = struct {
         extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
         extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const posix.addrinfo, result: **posix.addrinfo) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn freeaddrinfo(res: *addrinfo) callconv(std.os.windows.WINAPI) void;
+        extern "ws2_32" fn freeaddrinfo(res: *posix.addrinfo) callconv(std.os.windows.WINAPI) void;
     };
 
     // TODO: This can be removed in favor of upstream Zig `std.posix.socket` if the
@@ -1523,8 +1523,8 @@ const windows = struct {
     fn getaddrinfo(
         name: [*:0]const u8,
         port: [*:0]const u8,
-        hints: *const addrinfo,
-        result: *?*addrinfo,
+        hints: *const posix.addrinfo,
+        result: *?*posix.addrinfo,
     ) GetAddrInfoError!void {
         const rc = funcs.getaddrinfo(name, port, hints, @ptrCast(result));
         if (rc != 0)

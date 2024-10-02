@@ -51,10 +51,10 @@ jobs:
 #        # if: ${{ matrix.platform != 'windows-latest' }}
 #        run: |
 #          zig build discovery-examples
-#
-#      - name: Compile and test udp broadcast
-#        run: |
-#          zig build udp-broadcast
+
+      - name: Compile and test udp broadcast
+        run: |
+          zig build udp-broadcast
       
       - name: Compile and test ntp client
         run: |

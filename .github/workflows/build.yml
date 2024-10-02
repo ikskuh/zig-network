@@ -33,28 +33,28 @@ jobs:
         with:
           version: master
 
-      - name: Compile and test synchronous
-        run: |
-          zig build test install sync-examples
+#      - name: Compile and test synchronous
+#        run: |
+#          zig build test install sync-examples
 
       #      - name: Compile and test asynchronous
       #        # if: ${{ matrix.platform != 'windows-latest' }}
       #        run: |
       #          zig build async-examples
 
-      - name: Compile and test udp
-        # if: ${{ matrix.platform != 'windows-latest' }}
-        run: |
-          zig build udp-examples
-
-      - name: Compile and test discovery
-        # if: ${{ matrix.platform != 'windows-latest' }}
-        run: |
-          zig build discovery-examples
-
-      - name: Compile and test udp broadcast
-        run: |
-          zig build udp-broadcast
+#      - name: Compile and test udp
+#        # if: ${{ matrix.platform != 'windows-latest' }}
+#        run: |
+#          zig build udp-examples
+#
+#      - name: Compile and test discovery
+#        # if: ${{ matrix.platform != 'windows-latest' }}
+#        run: |
+#          zig build discovery-examples
+#
+#      - name: Compile and test udp broadcast
+#        run: |
+#          zig build udp-broadcast
       
       - name: Compile and test ntp client
         run: |

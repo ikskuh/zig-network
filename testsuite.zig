@@ -15,11 +15,12 @@ test "Get endpoint list" {
     }
 }
 
+const host = "tcpbin.com";
+
 test "Connect to an echo server" {
     try network.init();
     defer network.deinit();
 
-    const host = "45.79.112.203"; //"tcpbin.com";
     const sock = try network.connectToHost(std.testing.allocator, host, 4242, .tcp);
     defer sock.close();
 
@@ -38,7 +39,7 @@ test "Echo server readiness" {
 
     const sock = try network.connectToHost(
         std.testing.allocator,
-        "tcpbin.com",
+        host,
         4242,
         .tcp,
     );

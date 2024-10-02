@@ -1,6 +1,8 @@
 const std = @import("std");
 const os = @import("os");
 const builtin = @import("builtin");
+const native_os = builtin.os.tag;
+const posix = std.posix;
 
 comptime {
     std.debug.assert(@sizeOf(std.posix.sockaddr) >= @sizeOf(std.posix.sockaddr.in));
@@ -1259,26 +1261,17 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
-        const NUMERICSERV = 8;
-
-        const AI = if (is_windows) windows.ws2_32.AI else std.c.AI;
-                const FLAGS = if (is_windows) i32 else std.c.AI.AI__struct_1605;
-        var flags: FLAGS = 0;
-        var ai: AI = @bitCast(flags);
-        ai.NUMERICSERV = true;
-        flags = NUMERICSERV;//@bitCast(ai);
-
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
 
         const port_c = try std.fmt.allocPrint(allocator, "{}\x00", .{port});
         defer allocator.free(port_c);
 
-        const hints = addrinfo{
-            .flags = flags  ,
-            .family = std.posix.AF.UNSPEC,
-            .socktype = std.posix.SOCK.STREAM,
-            .protocol = std.posix.IPPROTO.TCP,
+        const hints: posix.addrinfo = .{
+            .flags = .{ .NUMERICSERV = true },
+            .family = posix.AF.UNSPEC,
+            .socktype = posix.SOCK.STREAM,
+            .protocol = posix.IPPROTO.TCP,
             .canonname = null,
             .addr = null,
             .addrlen = 0,

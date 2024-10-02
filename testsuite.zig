@@ -15,13 +15,13 @@ test "Get endpoint list" {
     }
 }
 
-const host = "tcpbin.com";
-
 test "Connect to an echo server" {
+    const test_host = "tcpbin.com";
+
     try network.init();
     defer network.deinit();
 
-    const sock = try network.connectToHost(std.testing.allocator, host, 4242, .tcp);
+    const sock = try network.connectToHost(std.testing.allocator, test_host, 4242, .tcp);
     defer sock.close();
 
     const msg = "Hi from socket!\n";
@@ -34,12 +34,14 @@ test "Connect to an echo server" {
 }
 
 test "Echo server readiness" {
+    const test_host = "tcpbin.com";
+
     try network.init();
     defer network.deinit();
 
     const sock = try network.connectToHost(
         std.testing.allocator,
-        host,
+        test_host,
         4242,
         .tcp,
     );

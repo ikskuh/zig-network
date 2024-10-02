@@ -1258,7 +1258,6 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
     if (builtin.link_libc or is_windows) {
         const getaddrinfo_fn = if (is_windows) windows.getaddrinfo else libc_getaddrinfo;
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
-        //const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
@@ -1414,17 +1413,6 @@ const windows = struct {
         tv_sec: c_long,
         tv_usec: c_long,
     };
-
-    // const addrinfo = extern struct {
-    //     flags: i32,
-    //     family: i32,
-    //     socktype: i32,
-    //     protocol: i32,
-    //     addrlen: std.posix.socklen_t,
-    //     canonname: ?[*:0]u8,
-    //     addr: ?*std.posix.sockaddr,
-    //     next: ?*addrinfo,
-    // };
 
     const funcs = struct {
         extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;

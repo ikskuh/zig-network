@@ -1258,7 +1258,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
     if (builtin.link_libc or is_windows) {
         const getaddrinfo_fn = if (is_windows) windows.getaddrinfo else libc_getaddrinfo;
         const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
-        const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
+        //const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
         const name_c = try allocator.dupeZ(u8, name);
         defer allocator.free(name_c);
@@ -1283,7 +1283,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
 
         const addr_count = blk: {
             var count: usize = 0;
-            var it: ?*addrinfo = res;
+            var it: ?*posix.addrinfo = res;
             while (it) |info| : (it = info.next) {
                 if (info.addr != null) {
                     count += 1;
@@ -1293,7 +1293,7 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         };
         result.endpoints = try arena.alloc(EndPoint, addr_count);
 
-        var it: ?*addrinfo = res;
+        var it: ?*posix.addrinfo = res;
         var i: usize = 0;
         while (it) |info| : (it = info.next) {
             const sockaddr = info.addr orelse continue;

@@ -1257,8 +1257,8 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
     errdefer result.arena.deinit();
 
     if (builtin.link_libc or is_windows) {
-        // const getaddrinfo_fn = if (is_windows) windows.getaddrinfo else libc_getaddrinfo;
-        // const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
+        const getaddrinfo_fn = if (is_windows) windows.getaddrinfo else libc_getaddrinfo;
+        const freeaddrinfo_fn = if (is_windows) windows.funcs.freeaddrinfo else std.posix.system.freeaddrinfo;
         const addrinfo = if (is_windows) windows.addrinfo else std.posix.addrinfo;
 
         const name_c = try allocator.dupeZ(u8, name);
@@ -1278,11 +1278,9 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
             .next = null,
         };
 
-        const sys = if (native_os == .windows) windows.ws2_32 else posix.system;
-
         var res: ?*addrinfo = undefined;
-        try sys.getaddrinfo(name_c.ptr, @ptrCast(port_c.ptr), &hints, &res);
-        defer if (res) |r| sys.freeaddrinfo(r);
+        try getaddrinfo_fn(name_c.ptr, @ptrCast(port_c.ptr), &hints, &res);
+        defer if (res) |r| freeaddrinfo_fn(r);
 
         const addr_count = blk: {
             var count: usize = 0;

@@ -246,7 +246,6 @@ test "parse + json parse" {
 
 test "Darwin: connection-mode socket was connected already" {
     const port: u16 = 12345;
-
     const Server = struct {
         const Self = @This();
         port: u16 = port,

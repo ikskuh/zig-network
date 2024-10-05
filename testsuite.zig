@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const network = @import("network");
+const network = @import("network.zig");
 const expect = std.testing.expect;
 
 test "Get endpoint list" {
@@ -242,4 +242,65 @@ test "parse + json parse" {
         .address = .{ .ipv4 = network.Address.IPv4.init(8, 8, 4, 4) },
         .port = 53,
     }, wrapper.endpoint);
+}
+
+test "Darwin: connection-mode socket was connected already" {
+    const port: u16 = 12345;
+
+    const Server = struct {
+        const Self = @This();
+        port: u16 = port,
+        socket: network.Socket = undefined,
+        thread: std.Thread = undefined,
+
+        fn start(srv: *Self) !void {
+            try network.init();
+            errdefer network.deinit();
+
+            srv.socket = try network.Socket.create(.ipv4, .udp);
+            errdefer srv.socket.close();
+            _ = try srv.socket.enablePortReuse(true);
+
+            const bindAddr = network.EndPoint{
+                .address = network.Address{ .ipv4 = network.Address.IPv4.any },
+                .port = srv.port,
+            };
+
+            try srv.socket.bind(bindAddr);
+            srv.thread = std.Thread.spawn(.{}, run, .{srv}) catch unreachable;
+            return;
+        }
+
+        fn run(srv: *Self) void {
+            defer {
+                srv.socket.close();
+                network.deinit();
+            }
+            var buff: [128]u8 = undefined;
+            _ = srv.socket.receive(buff[0..]) catch return;
+            return;
+        }
+
+        fn waitFinish(srv: *Self) void {
+            srv.thread.join();
+        }
+    };
+
+
+    var srv: Server = .{};
+    try srv.start();
+    defer srv.waitFinish();
+
+    const addr: []const u8 = "127.0.0.1";
+
+    try network.init();
+    defer network.deinit();
+
+    const sock = try network.connectToHost(std.testing.allocator, addr, port, .udp);
+    defer sock.close();
+
+    var buff: [128]u8 = undefined;
+    _ = try sock.send(buff[0..]);
+
+    return;
 }

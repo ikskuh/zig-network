@@ -747,7 +747,7 @@ pub const Socket = struct {
         dest_addr: ?*const std.posix.sockaddr,
         addrlen: std.posix.socklen_t,
     ) std.posix.SendToError!usize {
-        if ((builtin.tag.native_os == .windows) or (builtin.tag.native_os == .linux)) {
+        if (!is_darwin) {
             return std.posix.sendto(sockfd, buf, flags, dest_addr, addrlen);
         }
         while (true) {

@@ -752,7 +752,7 @@ pub const Socket = struct {
         }
         while (true) {
             const rc = std.posix.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
-            switch (std.system.errno(rc)) {
+            switch (std.posix.system.errno(rc)) {
                 .SUCCESS => return @intCast(rc),
 
                 .ACCES => return error.AccessDenied,
@@ -783,7 +783,7 @@ pub const Socket = struct {
                 .NETUNREACH => return error.NetworkUnreachable,
                 .NOTCONN => return error.SocketNotConnected,
                 .NETDOWN => return error.NetworkSubsystemFailed,
-                else => |err| return std.posix.system.unexpectedErrno(err),
+                else => |err| return std.posix.unexpectedErrno(err),
             }
         }
     }

@@ -752,7 +752,7 @@ pub const Socket = struct {
         }
         while (true) {
             const rc = std.posix.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
-            switch (std.posix.system.errno(rc)) {
+            switch (std.posix.errno(rc)) {
                 .SUCCESS => return @intCast(rc),
 
                 .ACCES => return error.AccessDenied,

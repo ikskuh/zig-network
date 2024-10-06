@@ -751,7 +751,7 @@ pub const Socket = struct {
             return std.posix.sendto(sockfd, buf, flags, dest_addr, addrlen);
         }
         while (true) {
-            const rc = std.posix.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
+            const rc = std.posix.system.sendto(sockfd, buf, flags, dest_addr, addrlen);
             switch (std.posix.errno(rc)) {
                 .SUCCESS => return @intCast(rc),
 
@@ -767,7 +767,7 @@ pub const Socket = struct {
                 .INVAL => return error.UnreachableAddress,
                 // connection-mode socket was connected already but a recipient was specified
                 // sendto using NULL destination address
-                .ISCONN => return std.posix.sendto(sockfd, buf.ptr, buf.len, flags, null, 0),
+                .ISCONN => return std.posix.sendto(sockfd, buf, flags, null, 0),
                 .MSGSIZE => return error.MessageTooBig,
                 .NOBUFS => return error.SystemResources,
                 .NOMEM => return error.SystemResources,

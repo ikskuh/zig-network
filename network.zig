@@ -716,7 +716,9 @@ pub const Socket = struct {
     pub fn sendTo(self: Self, receiver: EndPoint, data: []const u8) SendError!usize {
         const flags = if (is_windows or is_bsd) 0 else std.os.linux.MSG.NOSIGNAL;
 
-        return switch (receiver.toSocketAddress()) {
+        const saddr = receiver.toSocketAddress();
+
+        const len = switch (saddr) {
             .ipv4 => |sockaddr| try std.posix.sendto(
                 self.internal,
                 data,
@@ -732,6 +734,58 @@ pub const Socket = struct {
                 @sizeOf(@TypeOf(sockaddr)),
             ),
         };
+
+        return len;
+    }
+
+    pub fn sendto(
+        /// The file descriptor of the sending socket.
+        sockfd: std.posix.socket_t,
+        /// Message to send.
+        buf: []const u8,
+        flags: u32,
+        dest_addr: ?*const std.posix.sockaddr,
+        addrlen: std.posix.socklen_t,
+    ) std.posix.SendToError!usize {
+        if ((builtin.tag.native_os == .windows) or (builtin.tag.native_os == .linux)) {
+            return std.posix.sendto(sockfd, buf, flags, dest_addr, addrlen);
+        }
+        while (true) {
+            const rc = std.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
+            switch (std.system.errno(rc)) {
+                .SUCCESS => return @intCast(rc),
+
+                .ACCES => return error.AccessDenied,
+                .AGAIN => return error.WouldBlock,
+                .ALREADY => return error.FastOpenAlreadyInProgress,
+                .BADF => unreachable, // always a race condition
+                .CONNREFUSED => return error.ConnectionRefused,
+                .CONNRESET => return error.ConnectionResetByPeer,
+                .DESTADDRREQ => unreachable, // The socket is not connection-mode, and no peer address is set.
+                .FAULT => unreachable, // An invalid user space address was specified for an argument.
+                .INTR => continue,
+                .INVAL => return error.UnreachableAddress,
+                // connection-mode socket was connected already but a recipient was specified
+                // sendto using NULL destination address
+                .ISCONN => return std.posix.sendto(sockfd, buf.ptr, buf.len, flags, null, 0),
+                .MSGSIZE => return error.MessageTooBig,
+                .NOBUFS => return error.SystemResources,
+                .NOMEM => return error.SystemResources,
+                .NOTSOCK => unreachable, // The file descriptor sockfd does not refer to a socket.
+                .OPNOTSUPP => unreachable, // Some bit in the flags argument is inappropriate for the socket type.
+                .PIPE => return error.BrokenPipe,
+                .AFNOSUPPORT => return error.AddressFamilyNotSupported,
+                .LOOP => return error.SymLinkLoop,
+                .NAMETOOLONG => return error.NameTooLong,
+                .NOENT => return error.FileNotFound,
+                .NOTDIR => return error.NotDir,
+                .HOSTUNREACH => return error.NetworkUnreachable,
+                .NETUNREACH => return error.NetworkUnreachable,
+                .NOTCONN => return error.SocketNotConnected,
+                .NETDOWN => return error.NetworkSubsystemFailed,
+                else => |err| return std.system.unexpectedErrno(err),
+            }
+        }
     }
 
     /// Sets the socket option `SO_REUSEPORT` which allows

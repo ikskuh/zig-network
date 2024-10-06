@@ -751,7 +751,7 @@ pub const Socket = struct {
             return std.posix.sendto(sockfd, buf, flags, dest_addr, addrlen);
         }
         while (true) {
-            const rc = std.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
+            const rc = std.posix.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
             switch (std.system.errno(rc)) {
                 .SUCCESS => return @intCast(rc),
 
@@ -783,7 +783,7 @@ pub const Socket = struct {
                 .NETUNREACH => return error.NetworkUnreachable,
                 .NOTCONN => return error.SocketNotConnected,
                 .NETDOWN => return error.NetworkSubsystemFailed,
-                else => |err| return std.system.unexpectedErrno(err),
+                else => |err| return std.posix.system.unexpectedErrno(err),
             }
         }
     }

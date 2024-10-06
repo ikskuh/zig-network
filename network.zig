@@ -719,14 +719,14 @@ pub const Socket = struct {
         const saddr = receiver.toSocketAddress();
 
         const len = switch (saddr) {
-            .ipv4 => |sockaddr| try std.posix.sendto(
+            .ipv4 => |sockaddr| try sendto(
                 self.internal,
                 data,
                 flags,
                 @ptrCast(&sockaddr),
                 @sizeOf(@TypeOf(sockaddr)),
             ),
-            .ipv6 => |sockaddr| try std.posix.sendto(
+            .ipv6 => |sockaddr| try sendto(
                 self.internal,
                 data,
                 flags,

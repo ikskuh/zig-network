@@ -751,7 +751,7 @@ pub const Socket = struct {
             return std.posix.sendto(sockfd, buf, flags, dest_addr, addrlen);
         }
         while (true) {
-            const rc = std.posix.system.sendto(sockfd, buf, flags, dest_addr, addrlen);
+            const rc = std.posix.system.sendto(sockfd, buf.ptr, buf.len, flags, dest_addr, addrlen);
             switch (std.posix.errno(rc)) {
                 .SUCCESS => return @intCast(rc),
 

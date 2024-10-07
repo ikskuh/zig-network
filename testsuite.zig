@@ -1,6 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const network = @import("network.zig");
+const network = @import("network");
 const expect = std.testing.expect;
 
 test "Get endpoint list" {
@@ -301,5 +301,6 @@ test "Darwin: connection-mode socket was connected already" {
     var buff: [128]u8 = undefined;
     _ = try sock.send(buff[0..]);
 
+    std.debug.print("Darwin: connection-mode socket test - finished\n", .{});
     return;
 }

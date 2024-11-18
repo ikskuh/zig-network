@@ -761,7 +761,6 @@ pub const Socket = struct {
                 .AGAIN => return error.WouldBlock,
                 .ALREADY => return error.FastOpenAlreadyInProgress,
                 .BADF => unreachable, // always a race condition
-                .CONNREFUSED => return error.ConnectionRefused,
                 .CONNRESET => return error.ConnectionResetByPeer,
                 .DESTADDRREQ => unreachable, // The socket is not connection-mode, and no peer address is set.
                 .FAULT => unreachable, // An invalid user space address was specified for an argument.

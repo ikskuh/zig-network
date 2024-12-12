@@ -553,8 +553,8 @@ pub const Socket = struct {
         std.debug.assert(read == null or read.? != 0);
         const micros = read orelse 0;
         var opt = if (is_windows) @as(u32, @divTrunc(micros, 1000)) else std.posix.timeval{
-            .sec = @intCast(@divTrunc(micros, std.time.us_per_s)),
-            .usec = @intCast(@mod(micros, std.time.us_per_s)),
+            .tv_sec = @intCast(@divTrunc(micros, std.time.us_per_s)),
+            .tv_usec = @intCast(@mod(micros, std.time.us_per_s)),
         };
         try std.posix.setsockopt(
             self.internal,
@@ -761,7 +761,6 @@ pub const Socket = struct {
                 .AGAIN => return error.WouldBlock,
                 .ALREADY => return error.FastOpenAlreadyInProgress,
                 .BADF => unreachable, // always a race condition
-                .CONNREFUSED => return error.ConnectionRefused,
                 .CONNRESET => return error.ConnectionResetByPeer,
                 .DESTADDRREQ => unreachable, // The socket is not connection-mode, and no peer address is set.
                 .FAULT => unreachable, // An invalid user space address was specified for an argument.
@@ -1321,8 +1320,10 @@ pub fn getEndpointList(allocator: std.mem.Allocator, name: []const u8, port: u16
         const port_c = try std.fmt.allocPrint(allocator, "{}\x00", .{port});
         defer allocator.free(port_c);
 
+        const ws2_32 = windows.ws2_32;
+
         const hints: posix.addrinfo = .{
-            .flags = .{ .NUMERICSERV = true },
+            .flags = ws2_32.AI.NUMERICSERV,
             .family = posix.AF.UNSPEC,
             .socktype = posix.SOCK.STREAM,
             .protocol = posix.IPPROTO.TCP,

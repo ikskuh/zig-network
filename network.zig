@@ -740,7 +740,7 @@ pub const Socket = struct {
     // .darwin returns ISCONN error for already connected socket
     // .windows and .linux both don't care
     // Intercepts ISCONN status for .darwin and retry sendto with null destination address
-    pub fn sendto(
+    fn sendto(
         /// The file descriptor of the sending socket.
         sockfd: std.posix.socket_t,
         /// Message to send.

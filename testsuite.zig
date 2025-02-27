@@ -219,7 +219,8 @@ test "parse + json parse" {
         \\{
         \\  "ipv4": "127.0.0.1",
         \\  "address": "10.0.0.1",
-        \\  "endpoint": "8.8.4.4:53"
+        \\  "endpoint": "8.8.4.4:53",
+        \\  "ipv6_endpoint": "::1:53"
         \\}
     ;
 
@@ -227,6 +228,7 @@ test "parse + json parse" {
         ipv4: network.Address.IPv4,
         address: network.Address,
         endpoint: network.EndPoint,
+        ipv6_endpoint: network.EndPoint,
     };
 
     const wrapper = try std.json.parseFromSliceLeaky(
@@ -242,6 +244,13 @@ test "parse + json parse" {
         .address = .{ .ipv4 = network.Address.IPv4.init(8, 8, 4, 4) },
         .port = 53,
     }, wrapper.endpoint);
+
+    var expected_addr = network.Address.IPv6.init(.{0} ** 16, 0);
+    expected_addr.value[15] = 1;
+    try std.testing.expectEqual(network.EndPoint{
+        .address = .{ .ipv6 = expected_addr },
+        .port = 53,
+    }, wrapper.ipv6_endpoint);
 }
 
 test "Darwin: connection-mode socket was connected already" {
@@ -284,7 +293,6 @@ test "Darwin: connection-mode socket was connected already" {
             srv.thread.join();
         }
     };
-
 
     var srv: Server = .{};
     try srv.start();

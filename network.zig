@@ -376,7 +376,7 @@ pub const EndPoint = struct {
     port: u16, // Stored as native, will convert to bigEndian when moving to sockaddr
 
     pub fn parse(string: []const u8) !EndPoint {
-        const colon_index = std.mem.indexOfScalar(u8, string, ':') orelse return error.InvalidFormat;
+        const colon_index = std.mem.lastIndexOfScalar(u8, string, ':') orelse return error.InvalidFormat;
 
         const address = try Address.parse(string[0..colon_index]);
 

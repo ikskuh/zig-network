@@ -1,6 +1,7 @@
 .{
-    .name = "network",
+    .name = .network, 
     .version = "0.1.0",
+    .fingerprint = 0x608487bc82806f3e,
     .paths = .{
         "build.zig",
         "build.zig.zon",

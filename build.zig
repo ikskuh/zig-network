@@ -6,7 +6,12 @@ pub fn build(b: *std.Build) !void {
 
     const module = b.addModule("network", .{
         .root_source_file = b.path("network.zig"),
+        .target = target,
+        .optimize = optimize,
     });
+    if (target.result.os.tag == .windows) {
+        module.linkSystemLibrary("ws2_32", .{ .needed = true });
+    }
 
     var test_runner = b.addTest(.{
         .root_module = b.createModule(.{

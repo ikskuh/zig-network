@@ -77,10 +77,8 @@ pub const Address = union(AddressFamily) {
             return std.mem.eql(u8, &lhs.value, &rhs.value);
         }
 
-        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
-            try writer.print("{}.{}.{}.{}", .{
+        pub fn format(value: Self, writer: *std.Io.Writer) !void {
+            try writer.print("{d}.{d}.{d}.{d}", .{
                 value.value[0],
                 value.value[1],
                 value.value[2],
@@ -148,11 +146,9 @@ pub const Address = union(AddressFamily) {
                 lhs.scope_id == rhs.scope_id;
         }
 
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) !void {
             if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
-                try std.fmt.format(writer, "[::ffff:{}.{}.{}.{}]", .{
+                try writer.print("[::ffff:{d}.{d}.{d}.{d}]", .{
                     self.value[12],
                     self.value[13],
                     self.value[14],
@@ -182,7 +178,7 @@ pub const Address = union(AddressFamily) {
                     }
                     continue;
                 }
-                try std.fmt.format(writer, "{x}", .{native_endian_parts[i]});
+                try writer.print("{x}", .{native_endian_parts[i]});
                 if (i != native_endian_parts.len - 1) {
                     try writer.writeAll(":");
                 }
@@ -205,7 +201,7 @@ pub const Address = union(AddressFamily) {
             // Address cannot start or end with a single ':'.
             if ((string[0] == ':' and string[1] != ':') or
                 (string[string.len - 2] != ':' and
-                string[string.len - 1] == ':'))
+                    string[string.len - 1] == ':'))
             {
                 return error.InvalidFormat;
             }
@@ -243,7 +239,7 @@ pub const Address = union(AddressFamily) {
                         // leading/trailing abbreviation.
                         if (groups[cg_index].len == 0 and
                             (!abbreviation_ending or
-                            (i != 1 and i != string.len - 1)))
+                                (i != 1 and i != string.len - 1)))
                         {
                             return error.InvalidFormat;
                         }
@@ -314,10 +310,10 @@ pub const Address = union(AddressFamily) {
         }
     };
 
-    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(value: @This(), writer: *std.Io.Writer) !void {
         switch (value) {
-            .ipv4 => |a| try a.format(fmt, options, writer),
-            .ipv6 => |a| try a.format(fmt, options, writer),
+            .ipv4 => |a| try a.format(writer),
+            .ipv6 => |a| try a.format(writer),
         }
     }
 
@@ -399,10 +395,8 @@ pub const EndPoint = struct {
         return parse(str) catch return error.UnexpectedToken;
     }
 
-    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        try writer.print("{}:{}", .{
+    pub fn format(value: Self, writer: *std.Io.Writer) !void {
+        try writer.print("{f}:{d}", .{
             value.address,
             value.port,
         });
@@ -478,8 +472,65 @@ pub const Socket = struct {
     pub const SendError = (std.posix.SendError || std.posix.SendToError);
     pub const ReceiveError = std.posix.RecvFromError;
 
-    pub const Reader = std.io.Reader(Socket, ReceiveError, receive);
-    pub const Writer = std.io.Writer(Socket, SendError, send);
+    pub const Reader = struct {
+        context: Socket,
+        interface: std.Io.Reader,
+        err: ?ReceiveError = null,
+
+        fn stream(
+            r: *std.Io.Reader,
+            w: *std.Io.Writer,
+            limit: std.Io.Limit,
+        ) std.Io.Reader.StreamError!usize {
+            const self: *Reader = @fieldParentPtr("interface", r);
+            const dest = limit.slice(try w.writableSliceGreedy(1));
+
+            const received = self.context.receive(dest) catch |e| {
+                self.err = e;
+                return error.ReadFailed;
+            };
+            w.advance(received);
+
+            return received;
+        }
+    };
+    pub const Writer = struct {
+        context: Socket,
+        interface: std.Io.Writer,
+        err: ?SendError = null,
+
+        fn drain(
+            w: *std.Io.Writer,
+            data: []const []const u8,
+            splat: usize,
+        ) std.Io.Writer.Error!usize {
+            const self: *Writer = @fieldParentPtr("interface", w);
+
+            const buffered = w.buffered();
+            if (buffered.len > 0) {
+                const drained = self.context.send(buffered) catch |e| {
+                    self.err = e;
+                    return error.WriteFailed;
+                };
+                return w.consume(drained);
+            }
+
+            for (data[0 .. data.len - 1]) |d| {
+                if (d.len == 0) continue;
+                return self.context.send(d) catch |e| {
+                    self.err = e;
+                    return error.WriteFailed;
+                };
+            }
+
+            const pattern = data[data.len - 1];
+            if (pattern.len == 0 or splat == 0) return 0;
+            return self.context.send(pattern) catch |e| {
+                self.err = e;
+                return error.WriteFailed;
+            };
+        }
+    };
 
     const Self = @This();
 
@@ -857,13 +908,32 @@ pub const Socket = struct {
     }
 
     /// Gets an reader that allows reading data from the socket.
-    pub fn reader(self: Self) Reader {
-        return .{ .context = self };
+    /// Requires a buffer of at least size 1.
+    pub fn reader(self: Self, buffer: []u8) Reader {
+        return .{
+            .context = self,
+            .interface = .{
+                .buffer = buffer,
+                .seek = 0,
+                .end = 0,
+                .vtable = &.{
+                    .stream = Reader.stream,
+                },
+            },
+        };
     }
 
     /// Gets a writer that allows writing data to the socket.
-    pub fn writer(self: Self) Writer {
-        return .{ .context = self };
+    pub fn writer(self: Self, buffer: []u8) Writer {
+        return .{
+            .context = self,
+            .interface = .{
+                .buffer = buffer,
+                .vtable = &.{
+                    .drain = Writer.drain,
+                },
+            },
+        };
     }
 };
 

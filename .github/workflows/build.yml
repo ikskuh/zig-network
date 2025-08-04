@@ -31,7 +31,7 @@ jobs:
       - name: Setup Zig
         uses: mlugg/setup-zig@v2
         with:
-          version: 0.14.0
+          version: master
 
       - name: Compile and run testsuite
         run: |
@@ -49,7 +49,7 @@ jobs:
       - name: Compile and test udp
         # if: ${{ matrix.platform != 'windows-latest' }}
         run: |
-          zig build udp-examples        
+          zig build udp-examples
 
       - name: Compile and test discovery
         # if: ${{ matrix.platform != 'windows-latest' }}
@@ -59,7 +59,7 @@ jobs:
       - name: Compile and test udp broadcast
         run: |
           zig build udp-broadcast
-      
+
       - name: Compile and test ntp client
         run: |
           zig build ntp-client

@@ -11,7 +11,7 @@ test "Get endpoint list" {
     defer endpoint_list.deinit();
 
     for (endpoint_list.endpoints) |endpt| {
-        std.debug.print("{}\n", .{endpt});
+        std.debug.print("{f}\n", .{endpt});
     }
 }
 
@@ -25,10 +25,13 @@ test "Connect to an echo server" {
     defer sock.close();
 
     const msg = "Hi from socket!\n";
-    try sock.writer().writeAll(msg);
+    var writer = sock.writer(&.{});
+    try writer.interface.writeAll(msg);
 
     var buf: [128]u8 = undefined;
-    const read_size = try sock.reader().readAll(buf[0..msg.len]);
+    var reader_buf: [1]u8 = undefined;
+    var reader = sock.reader(&reader_buf);
+    const read_size = try reader.interface.readSliceShort(buf[0..msg.len]);
     try std.testing.expectEqualSlices(u8, msg, buf[0..read_size]);
     std.debug.print("Echo: {s}", .{buf[0..read_size]});
 }
@@ -66,7 +69,8 @@ test "Echo server readiness" {
     if (!write_set.isReadyWrite(sock)) {
         return error.SocketNotReadyForWrite;
     }
-    try sock.writer().writeAll(msg);
+    var writer = sock.writer(&.{});
+    try writer.interface.writeAll(msg);
 
     if (try network.waitForSocketEvent(&read_set, 5 * std.time.ns_per_s) != 1) {
         return error.InvalidSocketReadWait;
@@ -75,7 +79,9 @@ test "Echo server readiness" {
         return error.SocketNotReadyForRead;
     }
     var buf: [128]u8 = undefined;
-    const read_size = try sock.reader().readAll(buf[0..msg.len]);
+    var reader_buf: [1]u8 = undefined;
+    var reader = sock.reader(&reader_buf);
+    const read_size = try reader.interface.readSliceShort(buf[0..msg.len]);
     try std.testing.expectEqualSlices(u8, msg, buf[0..read_size]);
 }
 
@@ -90,7 +96,11 @@ test "UDP timeout" {
         .port = 53,
     });
     try sock.setReadTimeout(3 * std.time.us_per_s);
-    try std.testing.expectError(error.WouldBlock, sock.reader().readByte());
+    var reader_buf: [1]u8 = undefined;
+    var reader = sock.reader(&reader_buf);
+    try std.testing.expectError(error.ReadFailed, reader.interface.takeByte());
+    try std.testing.expect(reader.err != null);
+    try std.testing.expectEqual(error.WouldBlock, reader.err.?);
 }
 
 test "IPv4 parse" {

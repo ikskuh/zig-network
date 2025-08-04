@@ -19,11 +19,10 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     var args_iter = try std.process.argsWithAllocator(allocator);
-    const exe_name = args_iter.next() orelse return error.MissingArgument;
-    defer allocator.free(exe_name);
+    defer args_iter.deinit();
 
+    _ = args_iter.next() orelse return error.MissingArgument;
     const port_name = args_iter.next() orelse return error.MissingArgument;
-    defer allocator.free(port_name);
 
     const port_number = try std.fmt.parseInt(u16, port_name, 10);
 
@@ -38,7 +37,7 @@ pub fn main() !void {
         var client = try sock.accept();
         defer client.close();
 
-        std.debug.print("Client connected from {}.\n", .{
+        std.debug.print("Client connected from {f}.\n", .{
             try client.getLocalEndPoint(),
         });
 

@@ -489,8 +489,10 @@ pub const Socket = struct {
                 self.err = e;
                 return error.ReadFailed;
             };
+
             if (received == 0)
                 return error.EndOfStream;
+
             w.advance(received);
 
             return received;

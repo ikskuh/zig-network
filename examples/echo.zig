@@ -38,7 +38,7 @@ pub fn main() !void {
         var client = try sock.accept();
         defer client.close();
 
-        std.debug.print("Client connected from {}.\n", .{
+        std.debug.print("Client connected from {f}.\n", .{
             try client.getLocalEndPoint(),
         });
 

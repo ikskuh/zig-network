@@ -35,9 +35,9 @@ pub fn main() !void {
     };
 
     // Setup the readloop
-    std.debug.print("Sending UDP messages to multicast address {}\n", .{endpoint});
+    std.debug.print("Sending UDP messages to multicast address {f}\n", .{endpoint});
     while (true) {
         _ = try sock.sendTo(endpoint, server_name);
-        std.time.sleep(2 * std.time.ns_per_s);
+        std.Thread.sleep(2 * std.time.ns_per_s);
     }
 }

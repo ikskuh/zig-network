@@ -478,8 +478,8 @@ pub const Socket = struct {
     pub const SendError = (std.posix.SendError || std.posix.SendToError);
     pub const ReceiveError = std.posix.RecvFromError;
 
-    pub const Reader = std.io.Reader(Socket, ReceiveError, receive);
-    pub const Writer = std.io.Writer(Socket, SendError, send);
+    pub const Reader = std.io.GenericReader(Socket, ReceiveError, receive);
+    pub const Writer = std.io.GenericWriter(Socket, SendError, send);
 
     const Self = @This();
 

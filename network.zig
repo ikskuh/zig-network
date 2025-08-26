@@ -478,8 +478,8 @@ pub const Socket = struct {
     pub const SendError = (std.posix.SendError || std.posix.SendToError);
     pub const ReceiveError = std.posix.RecvFromError;
 
-    pub const Reader = std.io.Reader(Socket, ReceiveError, receive);
-    pub const Writer = std.io.Writer(Socket, SendError, send);
+    pub const Reader = std.io.GenericReader(Socket, ReceiveError, receive);
+    pub const Writer = std.io.GenericWriter(Socket, SendError, send);
 
     const Self = @This();
 
@@ -1470,11 +1470,11 @@ const windows = struct {
     };
 
     const funcs = struct {
-        extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
+        extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.builtin.CallingConvention.winapi) c_int;
+        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.builtin.CallingConvention.winapi) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
-        extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const posix.addrinfo, result: **posix.addrinfo) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn freeaddrinfo(res: *posix.addrinfo) callconv(std.os.windows.WINAPI) void;
+        extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const posix.addrinfo, result: **posix.addrinfo) callconv(std.builtin.CallingConvention.winapi) c_int;
+        extern "ws2_32" fn freeaddrinfo(res: *posix.addrinfo) callconv(std.builtin.CallingConvention.winapi) void;
     };
 
     // TODO: This can be removed in favor of upstream Zig `std.posix.socket` if the

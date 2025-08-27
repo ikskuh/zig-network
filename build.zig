@@ -9,9 +9,6 @@ pub fn build(b: *std.Build) !void {
         .target = target,
         .optimize = optimize,
     });
-    if (target.result.os.tag == .windows) {
-        module.linkSystemLibrary("ws2_32", .{ .needed = true });
-    }
 
     var test_runner = b.addTest(.{
         .root_module = b.createModule(.{

@@ -11,23 +11,26 @@ pub fn main() !void {
     var sock = try network.connectToHost(std.heap.page_allocator, "pool.ntp.org", 123, .udp);
     defer sock.close();
 
-    try sock.writer().writeAll(&request);
+    var writer = sock.writer(&.{});
+    try writer.interface.writeAll(&request);
 
     var response: [48]u8 = undefined;
-    _ = try sock.reader().readAll(&response);
+    var reader_buf: [1]u8 = undefined;
+    var reader = sock.reader(&reader_buf);
+    _ = try reader.interface.readSliceShort(&response);
 
     // The timestamp is stored in bytes 40-43 of the response
-    const seconds = @divFloor(std.time.milliTimestamp(), std.time.ms_per_s);
+    const seconds: u64 = @intCast(@divFloor(std.time.milliTimestamp(), std.time.ms_per_s));
 
     // zig fmt: off
     const fractionalSeconds = @as(u64, @intCast(response[40])) << 24
     | @as(u64, @intCast(response[41])) << 16
     | @as(u64, @intCast(response[42])) << 8
     | @as(u64, @intCast(response[43]));
-    
+
     const timestamp = @divFloor(seconds, 2_208_988_800) * std.time.ms_per_s + fractionalSeconds * (std.time.ns_per_s / 4_294_967_296);
 
-    debug.print("NTP timestamp: {}\n", .{timestamp}); //0
+    debug.print("NTP timestamp: {d}\n", .{timestamp}); //0
 
     // result: 1970 -1 -1  0: 0: 0 (UTC 1970-01-01)
     debug.print("{s}\n", .{try convertTimestampToTime(@as(u64, @intCast(timestamp)))});

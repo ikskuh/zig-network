@@ -205,7 +205,7 @@ pub const Address = union(AddressFamily) {
             // Address cannot start or end with a single ':'.
             if ((string[0] == ':' and string[1] != ':') or
                 (string[string.len - 2] != ':' and
-                string[string.len - 1] == ':'))
+                    string[string.len - 1] == ':'))
             {
                 return error.InvalidFormat;
             }
@@ -243,7 +243,7 @@ pub const Address = union(AddressFamily) {
                         // leading/trailing abbreviation.
                         if (groups[cg_index].len == 0 and
                             (!abbreviation_ending or
-                            (i != 1 and i != string.len - 1)))
+                                (i != 1 and i != string.len - 1)))
                         {
                             return error.InvalidFormat;
                         }
@@ -939,7 +939,7 @@ pub const SocketSet = struct {
 /// keeps the thing above nice and clean, all functions get inlined.
 const OSLogic = switch (builtin.os.tag) {
     .windows => WindowsOSLogic,
-    .linux => LinuxOSLogic,
+    .linux, .freebsd => LinuxOSLogic,
     .macos, .ios, .watchos, .tvos => DarwinOsLogic,
     else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
 };
@@ -1045,7 +1045,7 @@ const WindowsOSLogic = struct {
 
         fn fdSlice(self: *align(8) FdSet) []windows.ws2_32.SOCKET {
             const ptr: [*]u8 = @ptrCast(self);
-            const socket_ptr: [*]windows.ws2_32.SOCKET = @alignCast(@ptrCast(ptr + 4 * @sizeOf(c_uint)));
+            const socket_ptr: [*]windows.ws2_32.SOCKET = @ptrCast(@alignCast(ptr + 4 * @sizeOf(c_uint)));
             return socket_ptr[0..self.size];
         }
 
@@ -1084,7 +1084,7 @@ const WindowsOSLogic = struct {
                 // Double our capacity.
                 const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
                 const ptr: []u8 align(8) = @alignCast(fd_set.*.memSlice());
-                fd_set.* = @alignCast(@ptrCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr));
+                fd_set.* = @ptrCast(@alignCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr));
                 fd_set.*.capacity *= 2;
             }
 
@@ -1251,7 +1251,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             // Windows ignores first argument.
             return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
         },
-        .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
+        .linux, .macos, .ios, .watchos, .tvos, .freebsd => return try std.posix.poll(
             set.internal.fds.items,
             if (timeout) |val| @as(i32, @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms)) else -1,
         ),

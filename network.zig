@@ -1187,23 +1187,10 @@ const WindowsOSLogic = struct {
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-<<<<<<< HEAD
         var list = Self{
             .allocator = allocator,
             .read_fds = .empty,
             .write_fds = .empty,
-=======
-        const read_fds = try .initCapacity(allocator, 8);
-        errdefer read_fds.deinit(allocator);
-
-        const write_fds = try .initCapacity(allocator, 8);
-        errdefer write_fds.deinit(allocator);
-
-        return Self{
-            .allocator = allocator,
-            .read_fds = read_fds,
-            .write_fds = write_fds,
->>>>>>> bcaa220 (Fixes unit tests on linux)
             .read_fd_set = try .make(allocator),
             .write_fd_set = try .make(allocator),
             .except_fd_set = try .make(allocator),

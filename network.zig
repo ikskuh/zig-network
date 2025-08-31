@@ -1183,20 +1183,22 @@ const WindowsOSLogic = struct {
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        const read_fds = try .initCapacity(allocator, 8);
-        errdefer read_fds.deinit(allocator);
-
-        const write_fds = try .initCapacity(allocator, 8);
-        errdefer write_fds.deinit(allocator);
-
-        return Self{
+        var list = Self{
             .allocator = allocator,
-            .read_fds = read_fds,
-            .write_fds = write_fds,
+            .read_fds = .empty,
+            .write_fds = .empty,
             .read_fd_set = try .make(allocator),
             .write_fd_set = try .make(allocator),
             .except_fd_set = try .make(allocator),
         };
+
+        errdefer list.read_fds.deinit(allocator);
+        errdefer list.write_fds.deinit(allocator);
+
+        try list.read_fds.ensureTotalCapacity(allocator, 8);
+        try list.write_fds.ensureTotalCapacity(allocator, 8);
+
+        return list;
     }
 
     inline fn deinit(self: *Self) void {

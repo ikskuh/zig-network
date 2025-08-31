@@ -1020,16 +1020,18 @@ const LinuxOSLogic = struct {
     const Self = @This();
     // use poll on linux
 
+    allocator: std.mem.Allocator,
     fds: std.ArrayList(std.posix.pollfd),
 
     inline fn init(allocator: std.mem.Allocator) !Self {
         return Self{
-            .fds = std.ArrayList(std.posix.pollfd).init(allocator),
+            .allocator = allocator,
+            .fds = .empty,
         };
     }
 
-    inline fn deinit(self: Self) void {
-        self.fds.deinit();
+    inline fn deinit(self: *Self) void {
+        self.fds.deinit(self.allocator);
     }
 
     inline fn clear(self: *Self) void {
@@ -1052,7 +1054,7 @@ const LinuxOSLogic = struct {
             }
         }
 
-        try self.fds.append(std.posix.pollfd{
+        try self.fds.append(self.allocator, std.posix.pollfd{
             .fd = sock.internal,
             .events = mask,
             .revents = 0,
@@ -1115,7 +1117,7 @@ const WindowsOSLogic = struct {
 
         fn fdSlice(self: *align(8) FdSet) []windows.ws2_32.SOCKET {
             const ptr: [*]u8 = @ptrCast(self);
-            const socket_ptr: [*]windows.ws2_32.SOCKET = @alignCast(@ptrCast(ptr + 4 * @sizeOf(c_uint)));
+            const socket_ptr: [*]windows.ws2_32.SOCKET = @ptrCast(@alignCast(ptr + 4 * @sizeOf(c_uint)));
             return socket_ptr[0..self.size];
         }
 
@@ -1154,7 +1156,7 @@ const WindowsOSLogic = struct {
                 // Double our capacity.
                 const new_mem_size = 4 * @sizeOf(c_uint) + 2 * fd_set.*.capacity * @sizeOf(windows.ws2_32.SOCKET);
                 const ptr: []u8 align(8) = @alignCast(fd_set.*.memSlice());
-                fd_set.* = @alignCast(@ptrCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr));
+                fd_set.* = @ptrCast(@alignCast((try allocator.reallocAdvanced(ptr, new_mem_size, @returnAddress())).ptr));
                 fd_set.*.capacity *= 2;
             }
 
@@ -1173,24 +1175,27 @@ const WindowsOSLogic = struct {
 
     allocator: std.mem.Allocator,
 
-    read_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
-    write_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
+    read_fds: std.ArrayList(windows.ws2_32.SOCKET),
+    write_fds: std.ArrayList(windows.ws2_32.SOCKET),
 
     read_fd_set: *align(8) FdSet,
     write_fd_set: *align(8) FdSet,
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        const read_fds = try std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
-        const write_fds = try std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
+        const read_fds = try .initCapacity(allocator, 8);
+        errdefer read_fds.deinit(allocator);
+
+        const write_fds = try .initCapacity(allocator, 8);
+        errdefer write_fds.deinit(allocator);
 
         return Self{
             .allocator = allocator,
             .read_fds = read_fds,
             .write_fds = write_fds,
-            .read_fd_set = try FdSet.make(allocator),
-            .write_fd_set = try FdSet.make(allocator),
-            .except_fd_set = try FdSet.make(allocator),
+            .read_fd_set = try .make(allocator),
+            .write_fd_set = try .make(allocator),
+            .except_fd_set = try .make(allocator),
         };
     }
 

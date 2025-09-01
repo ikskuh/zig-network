@@ -16,10 +16,8 @@ const Server = struct {
     address: network.Address,
     name: []u8,
 
-    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        try writer.print("Server: {} : {s}", .{
+    pub fn format(value: Self, writer: anytype) !void {
+        try writer.print("Server: {f} : {s}", .{
             value.address,
             value.name,
         });
@@ -29,18 +27,22 @@ const Server = struct {
 // ServerList is a thread safe list of Server structs
 const ServerList = struct {
     const Self = @This();
+
+    allocator: std.mem.Allocator,
     list: std.ArrayList(Server),
     mutex: std.Thread.Mutex,
 
     pub fn init(allocator: std.mem.Allocator) Self {
         return Self{
-            .list = std.ArrayList(Server).init(allocator),
+            .allocator = allocator,
+            .list = .empty,
             .mutex = std.Thread.Mutex{},
         };
     }
 
-    pub fn deinit(value: Self) void {
-        value.list.deinit();
+    pub fn deinit(list: *Self) void {
+        list.list.deinit(list.allocator);
+        list.* = undefined;
     }
 
     pub fn append(value: *Self, data: Server) !void {
@@ -52,8 +54,8 @@ const ServerList = struct {
                 return;
             }
         }
-        std.debug.print(">> Discovered {}\n", .{data});
-        try value.list.append(data);
+        std.debug.print(">> Discovered {f}\n", .{data});
+        try value.list.append(value.allocator, data);
     }
 
     pub fn getServers(value: Self) []Server {
@@ -85,12 +87,12 @@ pub fn main() !void {
         if (servers.len != last_count) {
             std.debug.print("\nDiscovered Servers:\n===================\n", .{});
             for (servers) |s| {
-                std.debug.print("{}\n", .{s});
+                std.debug.print("{f}\n", .{s});
             }
             last_count = servers.len;
         }
         server_list.mutex.unlock();
-        std.time.sleep(1 * std.time.ns_per_s);
+        std.Thread.sleep(1 * std.time.ns_per_s);
     }
 }
 
@@ -114,7 +116,7 @@ fn scanServersThread(allocator: std.mem.Allocator, server_list: *ServerList) !vo
         .port = port_number,
     };
     sock.bind(incoming_endpoint) catch |err| {
-        std.debug.print("failed to bind to {}:{}\n", .{ incoming_endpoint, err });
+        std.debug.print("failed to bind to {f}:{t}\n", .{ incoming_endpoint, err });
     };
 
     // Join the multicast group on 224.0.0.1
@@ -123,7 +125,7 @@ fn scanServersThread(allocator: std.mem.Allocator, server_list: *ServerList) !vo
         .interface = network.Address.IPv4.any,
     };
     sock.joinMulticastGroup(all_group) catch |err| {
-        std.debug.print("Failed to join mcast group {}:{}\n", .{ all_group, err });
+        std.debug.print("Failed to join mcast group {any}:{t}\n", .{ all_group, err });
     };
 
     const buflen: usize = 128;

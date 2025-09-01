@@ -29,7 +29,7 @@ pub fn main() !void {
         .port = 9999,
     };
     sock.bind(incoming_endpoint) catch |err| {
-        std.debug.print("failed to bind to {}:{}\n", .{ incoming_endpoint, err });
+        std.debug.print("failed to bind to {f}:{t}\n", .{ incoming_endpoint, err });
     };
 
     // Join the multicast group on 224.0.0.1
@@ -38,16 +38,17 @@ pub fn main() !void {
         .interface = network.Address.IPv4.any,
     };
     sock.joinMulticastGroup(all_group) catch |err| {
-        std.debug.print("Failed to join mcast group {}:{}\n", .{ all_group, err });
+        std.debug.print("Failed to join mcast group {any}:{t}\n", .{ all_group, err });
     };
 
     // Setup the readloop
-    std.debug.print("Waiting for UDP messages from socket {!}\n", .{sock.getLocalEndPoint()});
+    std.debug.print("Waiting for UDP messages from socket {!f}\n", .{sock.getLocalEndPoint()});
     const buflen = 4096;
     var msg: [buflen]u8 = undefined;
-    const r = sock.reader();
+    var r_buf: [1]u8 = undefined;
+    var r = sock.reader(&r_buf);
     while (true) {
-        const bytes = try r.read(msg[0..buflen]);
+        const bytes = try r.interface.readSliceShort(msg[0..buflen]);
         std.debug.print(">> {s}\n", .{msg[0..bytes]});
     }
 }

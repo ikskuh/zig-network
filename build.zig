@@ -6,68 +6,86 @@ pub fn build(b: *std.Build) !void {
 
     const module = b.addModule("network", .{
         .root_source_file = b.path("network.zig"),
+        .target = target,
+        .optimize = optimize,
     });
 
     var test_runner = b.addTest(.{
-        .root_source_file = b.path("testsuite.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("testsuite.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     test_runner.root_module.addImport("network", module);
 
     const async_example = b.addExecutable(.{
         .name = "async",
-        .root_source_file = b.path("examples/async.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/async.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     async_example.root_module.addImport("network", module);
 
     const echo_example = b.addExecutable(.{
         .name = "echo",
-        .root_source_file = b.path("examples/echo.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/echo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     echo_example.root_module.addImport("network", module);
 
     const udp_example = b.addExecutable(.{
         .name = "udp",
-        .root_source_file = b.path("examples/multicast_udp.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/multicast_udp.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     udp_example.root_module.addImport("network", module);
 
     const udp_broadcast_example = b.addExecutable(.{
         .name = "udp_broadcast",
-        .root_source_file = b.path("examples/udp_broadcast.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/udp_broadcast.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     udp_broadcast_example.root_module.addImport("network", module);
 
     const discovery_client = b.addExecutable(.{
         .name = "discovery_client",
-        .root_source_file = b.path("examples/discovery/client.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/discovery/client.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     discovery_client.root_module.addImport("network", module);
 
     const discovery_server = b.addExecutable(.{
         .name = "discovery_server",
-        .root_source_file = b.path("examples/discovery/server.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/discovery/server.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     discovery_server.root_module.addImport("network", module);
 
     const ntp_client = b.addExecutable(.{
         .name = "ntp_client",
-        .root_source_file = b.path("examples/ntp_client.zig"),
-        .target = target,
-        .optimize = optimize,
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/ntp_client.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
     });
     ntp_client.root_module.addImport("network", module);
 

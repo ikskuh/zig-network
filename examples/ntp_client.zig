@@ -13,9 +13,17 @@ pub fn main() !void {
     var sock = try network.connectToHost(std.heap.page_allocator, "pool.ntp.org", 123, .udp);
     defer sock.close();
 
-    try sock.writer().writeStructEndian(request, .big);
+    var work_buf: [@sizeOf(NtpHeader)]u8 = undefined;
+    {
+        var writer = sock.writer(&work_buf);
+        try writer.interface.writeStruct(request, .big);
+        try writer.interface.flush();
+    }
 
-    const response: NtpHeader = try sock.reader().readStructEndian(NtpHeader, .big);
+    const response: NtpHeader = blk: {
+        var reader = sock.reader(&work_buf);
+        break :blk try reader.interface.takeStruct(NtpHeader, .big);
+    };
 
     std.log.info("NTP Response:", .{});
     std.log.info("  flags > version        = {}", .{response.flags.version});
@@ -165,8 +173,8 @@ const NtpShort = packed struct(u32) {
         return secs + frac / std.math.maxInt(u16);
     }
 
-    pub fn format(ts: NtpShort, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.formatType(ts.get_seconds(), fmt, opt, writer, 1);
+    pub fn formatNumber(ts: NtpShort, writer: *std.io.Writer, opt: std.fmt.Number) !void {
+        try writer.printFloat(ts.get_seconds(), opt);
     }
 };
 
@@ -183,7 +191,7 @@ const NtpTimestamp = extern struct {
         return secs + frac / std.math.maxInt(u32);
     }
 
-    pub fn format(ts: NtpTimestamp, comptime fmt: []const u8, opt: std.fmt.FormatOptions, writer: anytype) !void {
-        try std.fmt.formatType(ts.get_seconds(), fmt, opt, writer, 1);
+    pub fn formatNumber(ts: NtpTimestamp, writer: *std.io.Writer, opt: std.fmt.Number) !void {
+        try writer.printFloat(ts.get_seconds(), opt);
     }
 };

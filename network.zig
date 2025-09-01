@@ -77,10 +77,8 @@ pub const Address = union(AddressFamily) {
             return std.mem.eql(u8, &lhs.value, &rhs.value);
         }
 
-        pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
-            try writer.print("{}.{}.{}.{}", .{
+        pub fn format(value: Self, writer: *std.Io.Writer) !void {
+            try writer.print("{d}.{d}.{d}.{d}", .{
                 value.value[0],
                 value.value[1],
                 value.value[2],
@@ -148,11 +146,9 @@ pub const Address = union(AddressFamily) {
                 lhs.scope_id == rhs.scope_id;
         }
 
-        pub fn format(self: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-            _ = fmt;
-            _ = options;
+        pub fn format(self: Self, writer: *std.Io.Writer) !void {
             if (std.mem.eql(u8, self.value[0..12], &[_]u8{ 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff })) {
-                try std.fmt.format(writer, "[::ffff:{}.{}.{}.{}]", .{
+                try writer.print("[::ffff:{d}.{d}.{d}.{d}]", .{
                     self.value[12],
                     self.value[13],
                     self.value[14],
@@ -182,7 +178,7 @@ pub const Address = union(AddressFamily) {
                     }
                     continue;
                 }
-                try std.fmt.format(writer, "{x}", .{native_endian_parts[i]});
+                try writer.print("{x}", .{native_endian_parts[i]});
                 if (i != native_endian_parts.len - 1) {
                     try writer.writeAll(":");
                 }
@@ -314,10 +310,10 @@ pub const Address = union(AddressFamily) {
         }
     };
 
-    pub fn format(value: @This(), comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
+    pub fn format(value: @This(), writer: *std.Io.Writer) !void {
         switch (value) {
-            .ipv4 => |a| try a.format(fmt, options, writer),
-            .ipv6 => |a| try a.format(fmt, options, writer),
+            .ipv4 => |a| try a.format(writer),
+            .ipv6 => |a| try a.format(writer),
         }
     }
 
@@ -399,10 +395,8 @@ pub const EndPoint = struct {
         return parse(str) catch return error.UnexpectedToken;
     }
 
-    pub fn format(value: Self, comptime fmt: []const u8, options: std.fmt.FormatOptions, writer: anytype) !void {
-        _ = fmt;
-        _ = options;
-        try writer.print("{}:{}", .{
+    pub fn format(value: Self, writer: *std.Io.Writer) !void {
+        try writer.print("{f}:{d}", .{
             value.address,
             value.port,
         });
@@ -478,8 +472,65 @@ pub const Socket = struct {
     pub const SendError = (std.posix.SendError || std.posix.SendToError);
     pub const ReceiveError = std.posix.RecvFromError;
 
-    pub const Reader = std.io.Reader(Socket, ReceiveError, receive);
-    pub const Writer = std.io.Writer(Socket, SendError, send);
+    pub const Reader = struct {
+        context: Socket,
+        interface: std.Io.Reader,
+        err: ?ReceiveError = null,
+
+        fn stream(
+            r: *std.Io.Reader,
+            w: *std.Io.Writer,
+            limit: std.Io.Limit,
+        ) std.Io.Reader.StreamError!usize {
+            const self: *Reader = @fieldParentPtr("interface", r);
+            const dest = limit.slice(try w.writableSliceGreedy(1));
+
+            const received = self.context.receive(dest) catch |e| {
+                self.err = e;
+                return error.ReadFailed;
+            };
+            w.advance(received);
+
+            return received;
+        }
+    };
+    pub const Writer = struct {
+        context: Socket,
+        interface: std.Io.Writer,
+        err: ?SendError = null,
+
+        fn drain(
+            w: *std.Io.Writer,
+            data: []const []const u8,
+            splat: usize,
+        ) std.Io.Writer.Error!usize {
+            const self: *Writer = @fieldParentPtr("interface", w);
+
+            const buffered = w.buffered();
+            if (buffered.len > 0) {
+                const drained = self.context.send(buffered) catch |e| {
+                    self.err = e;
+                    return error.WriteFailed;
+                };
+                return w.consume(drained);
+            }
+
+            for (data[0 .. data.len - 1]) |d| {
+                if (d.len == 0) continue;
+                return self.context.send(d) catch |e| {
+                    self.err = e;
+                    return error.WriteFailed;
+                };
+            }
+
+            const pattern = data[data.len - 1];
+            if (pattern.len == 0 or splat == 0) return 0;
+            return self.context.send(pattern) catch |e| {
+                self.err = e;
+                return error.WriteFailed;
+            };
+        }
+    };
 
     const Self = @This();
 
@@ -857,13 +908,32 @@ pub const Socket = struct {
     }
 
     /// Gets an reader that allows reading data from the socket.
-    pub fn reader(self: Self) Reader {
-        return .{ .context = self };
+    /// Requires a buffer of at least size 1.
+    pub fn reader(self: Self, buffer: []u8) Reader {
+        return .{
+            .context = self,
+            .interface = .{
+                .buffer = buffer,
+                .seek = 0,
+                .end = 0,
+                .vtable = &.{
+                    .stream = Reader.stream,
+                },
+            },
+        };
     }
 
     /// Gets a writer that allows writing data to the socket.
-    pub fn writer(self: Self) Writer {
-        return .{ .context = self };
+    pub fn writer(self: Self, buffer: []u8) Writer {
+        return .{
+            .context = self,
+            .interface = .{
+                .buffer = buffer,
+                .vtable = &.{
+                    .drain = Writer.drain,
+                },
+            },
+        };
     }
 };
 
@@ -950,16 +1020,18 @@ const LinuxOSLogic = struct {
     const Self = @This();
     // use poll on linux
 
+    allocator: std.mem.Allocator,
     fds: std.ArrayList(std.posix.pollfd),
 
     inline fn init(allocator: std.mem.Allocator) !Self {
         return Self{
-            .fds = std.ArrayList(std.posix.pollfd).init(allocator),
+            .allocator = allocator,
+            .fds = .empty,
         };
     }
 
-    inline fn deinit(self: Self) void {
-        self.fds.deinit();
+    inline fn deinit(self: *Self) void {
+        self.fds.deinit(self.allocator);
     }
 
     inline fn clear(self: *Self) void {
@@ -982,7 +1054,7 @@ const LinuxOSLogic = struct {
             }
         }
 
-        try self.fds.append(std.posix.pollfd{
+        try self.fds.append(self.allocator, std.posix.pollfd{
             .fd = sock.internal,
             .events = mask,
             .revents = 0,
@@ -1051,7 +1123,7 @@ const WindowsOSLogic = struct {
 
         fn make(allocator: std.mem.Allocator) !*align(8) FdSet {
             // Initialize with enough space for 8 sockets.
-            const mem = try allocator.alignedAlloc(u8, 8, 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
+            const mem = try allocator.alignedAlloc(u8, .@"8", 4 * @sizeOf(c_uint) + 8 * @sizeOf(windows.ws2_32.SOCKET));
 
             const fd_set: *align(8) FdSet = @ptrCast(mem);
             fd_set.* = .{ .capacity = 8, .size = 0 };
@@ -1103,25 +1175,30 @@ const WindowsOSLogic = struct {
 
     allocator: std.mem.Allocator,
 
-    read_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
-    write_fds: std.ArrayListUnmanaged(windows.ws2_32.SOCKET),
+    read_fds: std.ArrayList(windows.ws2_32.SOCKET),
+    write_fds: std.ArrayList(windows.ws2_32.SOCKET),
 
     read_fd_set: *align(8) FdSet,
     write_fd_set: *align(8) FdSet,
     except_fd_set: *align(8) FdSet,
 
     inline fn init(allocator: std.mem.Allocator) !Self {
-        const read_fds = try std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
-        const write_fds = try std.ArrayListUnmanaged(windows.ws2_32.SOCKET).initCapacity(allocator, 8);
-
-        return Self{
+        var list = Self{
             .allocator = allocator,
-            .read_fds = read_fds,
-            .write_fds = write_fds,
-            .read_fd_set = try FdSet.make(allocator),
-            .write_fd_set = try FdSet.make(allocator),
-            .except_fd_set = try FdSet.make(allocator),
+            .read_fds = .empty,
+            .write_fds = .empty,
+            .read_fd_set = try .make(allocator),
+            .write_fd_set = try .make(allocator),
+            .except_fd_set = try .make(allocator),
         };
+
+        errdefer list.read_fds.deinit(allocator);
+        errdefer list.write_fds.deinit(allocator);
+
+        try list.read_fds.ensureTotalCapacity(allocator, 8);
+        try list.write_fds.ensureTotalCapacity(allocator, 8);
+
+        return list;
     }
 
     inline fn deinit(self: *Self) void {
@@ -1470,11 +1547,11 @@ const windows = struct {
     };
 
     const funcs = struct {
-        extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(std.os.windows.WINAPI) c_int;
+        extern "ws2_32" fn recvfrom(s: ws2_32.SOCKET, buf: [*c]u8, len: c_int, flags: c_int, from: [*c]std.posix.sockaddr, fromlen: [*c]std.posix.socklen_t) callconv(.winapi) c_int;
+        extern "ws2_32" fn select(nfds: c_int, readfds: ?*anyopaque, writefds: ?*anyopaque, exceptfds: ?*anyopaque, timeout: [*c]const timeval) callconv(.winapi) c_int;
         extern "ws2_32" fn __WSAFDIsSet(arg0: ws2_32.SOCKET, arg1: [*]u8) c_int;
-        extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const posix.addrinfo, result: **posix.addrinfo) callconv(std.os.windows.WINAPI) c_int;
-        extern "ws2_32" fn freeaddrinfo(res: *posix.addrinfo) callconv(std.os.windows.WINAPI) void;
+        extern "ws2_32" fn getaddrinfo(nodename: [*:0]const u8, servicename: [*:0]const u8, hints: *const posix.addrinfo, result: **posix.addrinfo) callconv(.winapi) c_int;
+        extern "ws2_32" fn freeaddrinfo(res: *posix.addrinfo) callconv(.winapi) void;
     };
 
     // TODO: This can be removed in favor of upstream Zig `std.posix.socket` if the

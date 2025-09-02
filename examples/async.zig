@@ -24,16 +24,22 @@ pub fn main() !void {
         const client = try allocator.create(Client);
         client.* = Client{
             .conn = try server.accept(),
-            .handle_frame = async client.handle(),
+            .allocator = allocator,
+            .handle_frame = undefined
         };
+        client.handle_frame = async client.handle();
     }
 }
 
 const Client = struct {
+    allocator: std.mem.Allocator,
     conn: network.Socket,
     handle_frame: @Frame(Client.handle),
 
     fn handle(self: *Client) !void {
+        defer self.conn.close();
+        defer self.allocator.destroy(self);
+
         try self.conn.writer().writeAll("server: welcome to the chat server\n");
 
         while (true) {

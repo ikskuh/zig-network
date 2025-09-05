@@ -29,7 +29,11 @@ Small network abstraction layer around TCP & UDP.
 
 `build.zig`:
 ```zig
-exe.addModule("network", b.dependency("network", .{}).module("network"));
+const network = b.dependency("network", .{
+    .target = target,
+    .optimize = optimize,
+});
+exe.root_module.addImport("network", network.module("network"));
 ```
 
 ### Usage example

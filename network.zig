@@ -620,8 +620,8 @@ pub const Socket = struct {
         std.debug.assert(write == null or write.? != 0);
         const micros = write orelse 0;
         var opt = if (is_windows) @as(u32, @divTrunc(micros, 1000)) else std.posix.timeval{
-            .tv_sec = @intCast(@divTrunc(micros, std.time.us_per_s)),
-            .tv_usec = @intCast(@mod(micros, std.time.us_per_s)),
+            .sec = @intCast(@divTrunc(micros, std.time.us_per_s)),
+            .usec = @intCast(@mod(micros, std.time.us_per_s)),
         };
         try std.posix.setsockopt(
             self.internal,

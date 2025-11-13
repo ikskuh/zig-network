@@ -3,9 +3,9 @@ name: CI
 on:
 
   push:
-    branches: [master]
+    branches: [master, zig-master]
   pull_request:
-    branches: [master]
+    branches: [master, zig-master]
   schedule:
     - cron: '0 5 * * *' # run at 5 AM UTC, continuous integration against master branch
 
@@ -21,15 +21,8 @@ jobs:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
-#     According to https://github.com/goto-bus-stop/setup-zig#setup-zig:
-#     This GitHub Action is unmaintained. Please use mlugg/setup-zig instead.
-#      - name: Setup Zig
-#        uses: goto-bus-stop/setup-zig@v1
-#        with:
-#          version: master
-
       - name: Setup Zig
-        uses: mlugg/setup-zig@v1
+        uses: mlugg/setup-zig@v2
         with:
           version: master
 
@@ -41,25 +34,18 @@ jobs:
         run: |
           zig build test install sync-examples
 
-      #      - name: Compile and test asynchronous
-      #        # if: ${{ matrix.platform != 'windows-latest' }}
-      #        run: |
-      #          zig build async-examples
-
       - name: Compile and test udp
-        # if: ${{ matrix.platform != 'windows-latest' }}
         run: |
-          zig build udp-examples        
+          zig build udp-examples
 
       - name: Compile and test discovery
-        # if: ${{ matrix.platform != 'windows-latest' }}
         run: |
           zig build discovery-examples
 
       - name: Compile and test udp broadcast
         run: |
           zig build udp-broadcast
-      
+
       - name: Compile and test ntp client
         run: |
           zig build ntp-client

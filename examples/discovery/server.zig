@@ -15,11 +15,11 @@ pub fn main() !void {
 
     // get the name of the server
     var args_iter = try std.process.argsWithAllocator(allocator);
-    const exe_name = args_iter.next() orelse return error.MissingArgument;
-    defer allocator.free(exe_name);
+    defer args_iter.deinit();
+
+    _ = args_iter.next() orelse return error.MissingArgument;
 
     const server_name = args_iter.next() orelse "Server Name";
-    defer allocator.free(server_name);
 
     // Create a UDP socket
     try network.init();
@@ -35,9 +35,9 @@ pub fn main() !void {
     };
 
     // Setup the readloop
-    std.debug.print("Sending UDP messages to multicast address {}\n", .{endpoint});
+    std.debug.print("Sending UDP messages to multicast address {f}\n", .{endpoint});
     while (true) {
         _ = try sock.sendTo(endpoint, server_name);
-        std.time.sleep(2 * std.time.ns_per_s);
+        std.Thread.sleep(2 * std.time.ns_per_s);
     }
 }

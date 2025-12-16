@@ -13,6 +13,10 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
+    var threaded = std.Io.Threaded.init(allocator);
+    defer threaded.deinit();
+    const io = threaded.io();
+
     // get the name of the server
     var args_iter = try std.process.argsWithAllocator(allocator);
     defer args_iter.deinit();
@@ -38,6 +42,6 @@ pub fn main() !void {
     std.debug.print("Sending UDP messages to multicast address {f}\n", .{endpoint});
     while (true) {
         _ = try sock.sendTo(endpoint, server_name);
-        std.Thread.sleep(2 * std.time.ns_per_s);
+        try io.sleep(.fromSeconds(2), .awake);
     }
 }

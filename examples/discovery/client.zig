@@ -66,6 +66,10 @@ const ServerList = struct {
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
 
+    var threaded = std.Io.Threaded.init(allocator);
+    defer threaded.deinit();
+    const io = threaded.io();
+
     try network.init();
     defer network.deinit();
 
@@ -92,7 +96,7 @@ pub fn main() !void {
             last_count = servers.len;
         }
         server_list.mutex.unlock();
-        std.Thread.sleep(1 * std.time.ns_per_s);
+        try io.sleep(.fromSeconds(1), .awake);
     }
 }
 

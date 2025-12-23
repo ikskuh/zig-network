@@ -1,7 +1,10 @@
 name: CI
 
-on:
+env:
+  ZIG_STABLE_VERSION: "0.15.2"
+  ZIG_MASTER_VERSION: "master"
 
+on:
   push:
     branches: [master, zig-master]
   pull_request:
@@ -16,15 +19,21 @@ jobs:
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
+    
+    # "Current zig version" computed once for the job:
+    # - for pushes: github.ref_name is the branch
+    # - for PRs: github.base_ref is the target branch
+    env:
+      ZIG_VERSION: ${{ (github.event_name == 'pull_request' && github.base_ref || github.ref_name) == 'master' && env.ZIG_STABLE_VERSION || env.ZIG_MASTER_VERSION }}
 
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
 
-      - name: Setup Zig
+      - name: Setup Zig (${{ env.ZIG_VERSION }})
         uses: mlugg/setup-zig@v2
         with:
-          version: master
+          version: ${{ env.ZIG_VERSION }}
 
       - name: Compile and run testsuite
         run: |

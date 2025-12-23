@@ -19,16 +19,24 @@ jobs:
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
-    
-    # "Current zig version" computed once for the job:
-    # - for pushes: github.ref_name is the branch
-    # - for PRs: github.base_ref is the target branch
-    env:
-      ZIG_VERSION: ${{ (github.event_name == 'pull_request' && github.base_ref || github.ref_name) == 'master' && env.ZIG_STABLE_VERSION || env.ZIG_MASTER_VERSION }}
-
+  
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
       - uses: actions/checkout@v2
+      
+      - name: Select Zig version for this run
+        run: |
+          TARGET_BRANCH="${GITHUB_BASE_REF:-$GITHUB_REF_NAME}"
+          echo "TARGET_BRANCH=$TARGET_BRANCH" >> "$GITHUB_ENV"
+
+          if [[ "$TARGET_BRANCH" == "master" ]]; then
+            ZVER="$ZIG_STABLE_VERSION"
+          else
+            ZVER="$ZIG_MASTER_VERSION"
+          fi
+
+          echo "ZIG_VERSION=$ZVER" >> "$GITHUB_ENV"
+          echo "Using Zig $ZVER for branch $TARGET_BRANCH"
 
       - name: Setup Zig (${{ env.ZIG_VERSION }})
         uses: mlugg/setup-zig@v2

@@ -1,7 +1,10 @@
 name: CI
 
-on:
+env:
+  ZIG_STABLE_VERSION: "0.15.2"
+  ZIG_MASTER_VERSION: "master"
 
+on:
   push:
     branches: [master, zig-master]
   pull_request:
@@ -16,12 +19,27 @@ jobs:
       matrix:
         platform: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.platform }}
-
+  
     steps:
       # Checks-out your repository under $GITHUB_WORKSPACE, so your job can access it
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
+      
+      - name: Select Zig version for this run
+        shell: pwsh
+        run: |
+          $targetBranch = if ($env:GITHUB_BASE_REF) { $env:GITHUB_BASE_REF } else { $env:GITHUB_REF_NAME }
+          "TARGET_BRANCH=$targetBranch" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          
+          if ($targetBranch -eq "master") {
+            $zig = $env:ZIG_STABLE_VERSION
+          } else {
+            $zig = $env:ZIG_MASTER_VERSION
+          }
 
-      - name: Setup Zig
+          "ZIG_VERSION=$zig" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          Write-Host "Using Zig $zig for branch $targetBranch"
+
+      - name: Setup Zig (${{ env.ZIG_VERSION }})
         uses: mlugg/setup-zig@v2
         with:
           version: master

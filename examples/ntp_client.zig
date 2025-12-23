@@ -173,7 +173,7 @@ const NtpShort = packed struct(u32) {
         return secs + frac / std.math.maxInt(u16);
     }
 
-    pub fn formatNumber(ts: NtpShort, writer: *std.io.Writer, opt: std.fmt.Number) !void {
+    pub fn formatNumber(ts: NtpShort, writer: *std.Io.Writer, opt: std.fmt.Number) !void {
         try writer.printFloat(ts.get_seconds(), opt);
     }
 };
@@ -191,7 +191,7 @@ const NtpTimestamp = extern struct {
         return secs + frac / std.math.maxInt(u32);
     }
 
-    pub fn formatNumber(ts: NtpTimestamp, writer: *std.io.Writer, opt: std.fmt.Number) !void {
+    pub fn formatNumber(ts: NtpTimestamp, writer: *std.Io.Writer, opt: std.fmt.Number) !void {
         try writer.printFloat(ts.get_seconds(), opt);
     }
 };

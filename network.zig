@@ -1011,7 +1011,7 @@ pub const SocketSet = struct {
 /// keeps the thing above nice and clean, all functions get inlined.
 const OSLogic = switch (builtin.os.tag) {
     .windows => WindowsOSLogic,
-    .linux => LinuxOSLogic,
+    .linux, .freebsd => LinuxOSLogic,
     .macos, .ios, .watchos, .tvos => DarwinOsLogic,
     else => @compileError("unsupported os " ++ @tagName(builtin.os.tag) ++ " for SocketSet!"),
 };
@@ -1330,7 +1330,7 @@ pub fn waitForSocketEvent(set: *SocketSet, timeout: ?u64) !usize {
             // Windows ignores first argument.
             return try windows.select(0, read_set, write_set, except_set, if (timeout != null) &tm else null);
         },
-        .linux, .macos, .ios, .watchos, .tvos => return try std.posix.poll(
+        .linux, .macos, .ios, .watchos, .tvos, .freebsd => return try std.posix.poll(
             set.internal.fds.items,
             if (timeout) |val| @as(i32, @intCast((val + std.time.ns_per_ms - 1) / std.time.ns_per_ms)) else -1,
         ),
